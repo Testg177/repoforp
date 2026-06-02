@@ -1,0 +1,26 @@
+<span class="status-badge @CssClass">
+    <span class="status-dot"></span>
+    @Label
+</span>
+
+@code {
+    [Parameter] public SubmissionStatus Status { get; set; }
+
+    private string CssClass => Status switch
+    {
+        SubmissionStatus.Draft => "status-draft",
+        SubmissionStatus.Submitted => "status-submitted",
+        SubmissionStatus.InReview => "status-inreview",
+        SubmissionStatus.Approved => "status-approved",
+        SubmissionStatus.Rejected => "status-rejected",
+        SubmissionStatus.RequiresChanges => "status-requireschanges",
+        _ => "status-draft"
+    };
+
+    private string Label => Status switch
+    {
+        SubmissionStatus.InReview => "In review",
+        SubmissionStatus.RequiresChanges => "Requires changes",
+        _ => Status.ToString()
+    };
+}

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlazorApp Carbon Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@400" rel="stylesheet">
+  <link href="../src/BlazorApp.Web/wwwroot/css/app.css" rel="stylesheet">
+  <style>
+    .preview-shell { min-height: 100vh; background: var(--bg-base); }
+    .preview-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 11px;
+      margin-bottom: 16px;
+    }
+    .material-symbols-outlined {
+      font-family: "Material Symbols Outlined";
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+    .preview-page { display: none; }
+    .preview-page.active { display: block; }
+    .topbar-actions .ghost-pill {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: var(--font-ui);
+    }
+    .topbar-actions .ghost-pill:hover { border-color: var(--border-hover); color: var(--text-primary); }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .detail-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+    .detail-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .tag {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .approval-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .primary-btn, .ghost-btn {
+      border: 0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .primary-btn {
+      background: var(--green);
+      color: var(--bg-deepest);
+    }
+    .ghost-btn {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .login-preview {
+      min-height: calc(100vh - 26px);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .login-card {
+      width: min(420px, 100%);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+    .login-field {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      margin-top: 10px;
+      font-family: var(--font-ui);
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin: 14px 0 18px;
+    }
+    .table-row-main { align-items: flex-start; }
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    @media (max-width: 960px) {
+      .mini-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <div class="system-ticker">
+      <div class="tick-item"><span class="led led-green"></span>system <strong>ok</strong></div>
+      <div class="tick-item"><span class="led led-amber"></span>do zatwierdzenia: <strong>14</strong></div>
+      <div class="tick-item"><span class="led led-red"></span>przeterminowane: <strong>3</strong></div>
+      <div class="tick-item"><span class="led led-amber"></span>kolejka email: <strong>9</strong></div>
+      <div class="tick-clock" id="clock"></div>
+    </div>
+
+    <div id="app-view">
+      <div class="app-body">
+        <aside class="sidebar">
+          <nav class="icon-rail">
+            <div class="rail-logo">SM</div>
+            <a class="rail-item" data-route="dashboard" data-title="Dashboard" href="#dashboard"><span class="material-symbols-outlined">dashboard</span></a>
+            <a class="rail-item" data-route="forms" data-title="Formularze" href="#forms"><span class="material-symbols-outlined">description</span></a>
+            <a class="rail-item" data-route="archive" data-title="Archiwum" href="#archive"><span class="material-symbols-outlined">archive</span></a>
+            <div class="rail-separator"></div>
+            <a class="rail-item" data-route="approvals" data-title="Do zatwierdzenia" href="#approvals"><span class="material-symbols-outlined">task_alt</span></a>
+            <a class="rail-item" data-route="reports" data-title="Raporty" href="#reports"><span class="material-symbols-outlined">bar_chart</span></a>
+            <div class="rail-spacer"></div>
+            <a class="rail-item" data-route="users" data-title="Uzytkownicy" href="#users"><span class="material-symbols-outlined">groups</span></a>
+            <a class="rail-item" data-route="settings" data-title="Ustawienia" href="#settings"><span class="material-symbols-outlined">settings</span></a>
+            <a class="rail-item" data-route="login" data-title="Logowanie" href="#login"><span class="material-symbols-outlined">login</span></a>
+          </nav>
+        </aside>
+
+        <main class="main-content">
+          <div class="topbar">
+            <div class="breadcrumb-path" id="breadcrumb">/ system / dashboard</div>
+            <div class="topbar-actions">
+              <button class="ghost-pill mono">5 unread</button>
+              <button class="ghost-pill mono">milosz@firma.pl</button>
+            </div>
+          </div>
+
+          <article class="content-area">
+            <div class="preview-page active" data-page="dashboard">
+              <div class="preview-note">
+                <span class="material-symbols-outlined" style="font-size:16px;">visibility</span>
+                To jest szybki preview UI z mockowanymi danymi, zeby ocenic wyglad bez backendu.
+              </div>
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Cockpit</h1>
+              <div class="kpi-grid">
+                <div class="kpi-card green card"><div class="kpi-label">Draft</div><div class="kpi-value">07</div><div class="text-muted">Robocze formularze</div></div>
+                <div class="kpi-card amber card"><div class="kpi-label">Submitted</div><div class="kpi-value">14</div><div class="text-muted">W toku akceptacji</div></div>
+                <div class="kpi-card green card"><div class="kpi-label">Approved</div><div class="kpi-value">128</div><div class="text-muted">Zatwierdzone</div></div>
+                <div class="kpi-card red card"><div class="kpi-label">Overdue</div><div class="kpi-value">03</div><div class="text-muted">Po terminie</div></div>
+              </div>
+              <div class="mini-grid">
+                <div class="detail-card card">
+                  <div class="detail-title">Moje formularze</div>
+                  <div class="stack">
+                    <div class="data-table-row"><div class="table-row-main"><div><div>Raport dzienny linii A</div><div class="text-muted mono">2026-06-02 06:30</div></div><span class="status-badge status-submitted"><span class="status-dot"></span>Submitted</span></div></div>
+                    <div class="data-table-row"><div class="table-row-main"><div><div>Checklista BHP</div><div class="text-muted mono">2026-06-02 08:10</div></div><span class="status-badge status-approved"><span class="status-dot"></span>Approved</span></div></div>
+                    <div class="data-table-row"><div class="table-row-main"><div><div>Incydent postoju</div><div class="text-muted mono">2026-06-01 23:14</div></div><span class="status-badge status-requireschanges"><span class="status-dot"></span>Requires changes</span></div></div>
+                  </div>
+                </div>
+                <div class="detail-card card">
+                  <div class="detail-title">Powiadomienia</div>
+                  <div class="stack">
+                    <div class="data-table-row notification-unread"><div>Manager odeslal formularz do poprawki</div><div class="text-muted mono">12 min temu</div></div>
+                    <div class="data-table-row notification-unread"><div>Nowy dokument w archiwum QA</div><div class="text-muted mono">34 min temu</div></div>
+                    <div class="data-table-row"><div>Digest poranny gotowy</div><div class="text-muted mono">07:00</div></div>
+                  </div>
+                </div>
+                <div class="detail-card card">
+                  <div class="detail-title">Szybkie akcje</div>
+                  <div class="stack">
+                    <button class="primary-btn">Nowy formularz</button>
+                    <button class="ghost-btn">Przejdz do akceptacji</button>
+                    <button class="ghost-btn">Eksport raportu PDF</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="forms">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Formularze</h1>
+              <div class="detail-card card">
+                <div class="data-table-header">Formularz / Termin / Status</div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Raport dzienny linii A</div><div class="text-muted mono">due 2026-06-02 14:00</div></div><span class="status-badge status-submitted"><span class="status-dot"></span>Submitted</span></div></div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Raport awarii prasy</div><div class="text-muted mono">due 2026-06-02 10:15</div></div><span class="status-badge status-inreview"><span class="status-dot"></span>In review</span></div></div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Checklista magazynu</div><div class="text-muted mono">due 2026-06-03 06:00</div></div><span class="status-badge status-draft"><span class="status-dot"></span>Draft</span></div></div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="archive">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Archiwum</h1>
+              <div class="detail-card card">
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;">
+                  <div>
+                    <div>Specyfikacje, procedury, protokoly i dokumenty produkcyjne</div>
+                    <div class="text-muted mono">storage: //serwer/archiwum/produkacja</div>
+                  </div>
+                  <button class="primary-btn">Testuj polaczenie</button>
+                </div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Instrukcja BHP - hala A</div><div class="text-muted mono">QA / 2026-05-28</div><div class="tag-list"><span class="tag">bhp</span><span class="tag">hala-a</span></div></div><div class="mono">pdf</div></div></div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Rejestr przestojow maj</div><div class="text-muted mono">PROD / 2026-05-31</div><div class="tag-list"><span class="tag">produkcja</span><span class="tag">przestoje</span></div></div><div class="mono">xlsx</div></div></div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="approvals">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Do zatwierdzenia</h1>
+              <div class="detail-card card">
+                <div class="data-table-row">
+                  <div class="table-row-main">
+                    <div><div>Incydent postoju linii C</div><div class="text-muted mono">Piotr Nowak / 2026-06-02 09:18</div></div>
+                    <div class="approval-actions"><button class="ghost-btn">Odeslij</button><button class="primary-btn">Zatwierdz</button></div>
+                  </div>
+                </div>
+                <div class="data-table-row">
+                  <div class="table-row-main">
+                    <div><div>Raport dzienny zmiany 2</div><div class="text-muted mono">Anna Kowalska / 2026-06-02 08:41</div></div>
+                    <div class="approval-actions"><button class="ghost-btn">Odrzuc</button><button class="primary-btn">Approve</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="reports">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Raporty</h1>
+              <div class="kpi-grid">
+                <div class="kpi-card green card"><div class="kpi-label">Terminowosc</div><div class="kpi-value">93.8%</div><div class="text-muted">Na czas vs po terminie</div></div>
+                <div class="kpi-card red card"><div class="kpi-label">Odrzucenia</div><div class="kpi-value">12</div><div class="text-muted">W tym tygodniu</div></div>
+                <div class="kpi-card blue card"><div class="kpi-label">Archiwum</div><div class="kpi-value">648</div><div class="text-muted">Aktywne dokumenty</div></div>
+                <div class="kpi-card amber card"><div class="kpi-label">Przestoje</div><div class="kpi-value">17h</div><div class="text-muted">Maj 2026</div></div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="users">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Uzytkownicy</h1>
+              <div class="detail-card card">
+                <div class="data-table-header">Uzytkownik / Dzial / Role</div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Milosz Test</div><div class="text-muted">milosz@firma.pl</div></div><div class="mono">IT / SuperAdmin</div></div></div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Anna Kowalska</div><div class="text-muted">anna@firma.pl</div></div><div class="mono">Produkcja / Manager</div></div></div>
+                <div class="data-table-row"><div class="table-row-main"><div><div>Piotr Nowak</div><div class="text-muted">piotr@firma.pl</div></div><div class="mono">QA / Employee</div></div></div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="settings">
+              <h1 style="font-family:var(--font-display);margin:0 0 16px;">Ustawienia</h1>
+              <div class="mini-grid">
+                <div class="detail-card card"><div class="detail-title">StoragePath</div><div class="mono">//serwer/archiwum/produkacja</div></div>
+                <div class="detail-card card"><div class="detail-title">Scheduler</div><div class="mono">07:00 / 1h / 90 dni</div></div>
+                <div class="detail-card card"><div class="detail-title">Security</div><div class="mono">lockout 5 / session 480m</div></div>
+              </div>
+            </div>
+
+            <div class="preview-page" data-page="login">
+              <div class="login-preview">
+                <div class="login-card card">
+                  <h1 style="font-family:var(--font-display);margin:0 0 10px;">Logowanie</h1>
+                  <div class="text-muted">Preview strony logowania z Carbon shell.</div>
+                  <input class="login-field" value="milosz@firma.pl" aria-label="email">
+                  <input class="login-field" type="password" value="12345678" aria-label="password">
+                  <label class="checkbox-row"><input type="checkbox" checked> Zapamietaj mnie</label>
+                  <div class="data-table-row notification-unread" style="margin-bottom:14px;">Po 3 nieudanych probach tu pojawi sie recaptcha v3.</div>
+                  <button class="primary-btn" style="width:100%;">Zaloguj</button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const pages = document.querySelectorAll("[data-page]");
+    const rails = document.querySelectorAll("[data-route]");
+    const breadcrumb = document.getElementById("breadcrumb");
+    const clock = document.getElementById("clock");
+
+    function updateClock() {
+      const now = new Date();
+      clock.textContent = now.toLocaleTimeString("pl-PL", { hour12: false });
+    }
+
+    function route() {
+      const hash = (location.hash || "#dashboard").replace("#", "");
+      pages.forEach(page => page.classList.toggle("active", page.dataset.page === hash));
+      rails.forEach(link => link.classList.toggle("active", link.dataset.route === hash));
+      breadcrumb.textContent = "/ system / " + hash.replace("-", " / ");
+    }
+
+    updateClock();
+    route();
+    setInterval(updateClock, 1000);
+    window.addEventListener("hashchange", route);
+  </script>
+</body>
+</html>

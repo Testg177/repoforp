@@ -1,0 +1,69 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager NavigationManager
+@inject FluentValidation.IValidator<LoginRequestDto> LoginValidator
+
+<PageTitle>Logowanie</PageTitle>
+
+<div class="auth-shell">
+    <MudPaper Class="auth-card card pa-6">
+        <MudText Typo="Typo.h1">Logowanie</MudText>
+        <MudText Class="text-muted mb-4">System zarzadzania formularzami, archiwum i raportami.</MudText>
+
+        <EditForm Model="_model" OnValidSubmit="HandleLoginAsync">
+            <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" FullWidth="true" Class="mb-3" />
+            <MudTextField @bind-Value="_model.Password" Label="Haslo" InputType="InputType.Password" Variant="Variant.Outlined" FullWidth="true" Class="mb-3" />
+            <MudCheckBox @bind-Checked="_model.RememberMe" Label="Zapamietaj mnie" Class="mb-3" />
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@_errorMessage</MudAlert>
+            }
+
+            @if (_failedAttempts >= 3)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3">Recaptcha placeholder: po 3 nieudanych probach przygotowany jest slot pod integracje v3.</MudAlert>
+            }
+
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Success" FullWidth="true">Zaloguj</MudButton>
+        </EditForm>
+    </MudPaper>
+</div>
+
+@code {
+    private readonly LoginRequestDto _model = new();
+    private string? _errorMessage;
+    private int _failedAttempts;
+
+    private async Task HandleLoginAsync()
+    {
+        _errorMessage = null;
+        var validationResult = await LoginValidator.ValidateAsync(_model);
+        if (!validationResult.IsValid)
+        {
+            _errorMessage = string.Join(" ", validationResult.Errors.Select(x => x.ErrorMessage));
+            return;
+        }
+
+        var result = await SignInManager.PasswordSignInAsync(_model.Email, _model.Password, _model.RememberMe, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            var user = await UserManager.FindByEmailAsync(_model.Email);
+            if (user?.ForcePasswordChange == true)
+            {
+                NavigationManager.NavigateTo("/Identity/Account/Manage/ChangePassword", true);
+                return;
+            }
+
+            NavigationManager.NavigateTo("/", true);
+            return;
+        }
+
+        _failedAttempts++;
+        _errorMessage = result.IsLockedOut
+            ? "Konto zostalo zablokowane po zbyt wielu probach."
+            : "Nieprawidlowy email lub haslo.";
+    }
+}

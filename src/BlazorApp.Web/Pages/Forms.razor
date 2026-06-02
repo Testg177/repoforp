@@ -1,0 +1,38 @@
+@page "/forms"
+@attribute [Authorize(Policy = "CanViewForms")]
+@inject IFormsService FormsService
+
+<PageTitle>Formularze</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Formularze</MudText>
+<MudPaper Class="pa-4 card">
+    <MudText Typo="Typo.h4" Class="mb-3">Ostatnie zgloszenia</MudText>
+    @if (_forms.Count == 0)
+    {
+        <MudText Class="text-muted">Brak danych.</MudText>
+    }
+    else
+    {
+        @foreach (var form in _forms)
+        {
+            <div class="data-table-row">
+                <div class="table-row-main">
+                    <div>
+                        <div>@form.FormTitle</div>
+                        <div class="text-muted mono">due @form.DueDateUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                    </div>
+                    <StatusBadge Status="@form.Status" />
+                </div>
+            </div>
+        }
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<FormSummaryDto> _forms = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _forms = await FormsService.GetMySubmissionsAsync();
+    }
+}

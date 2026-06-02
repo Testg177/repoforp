@@ -1,0 +1,19 @@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.h5">@Title</MudText>
+        <MudText Class="mt-2">@Message</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Anuluj</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="Confirm">Potwierdz</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string Title { get; set; } = "Potwierdzenie";
+    [Parameter] public string Message { get; set; } = string.Empty;
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+}

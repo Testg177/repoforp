@@ -1,0 +1,83 @@
+@page "/"
+@attribute [Authorize]
+@inject IDashboardService DashboardService
+
+<PageTitle>Dashboard</PageTitle>
+
+@if (_overview is null)
+{
+    <MudProgressCircular Color="Color.Success" Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h1" Class="mb-4">Cockpit</MudText>
+
+    <div class="kpi-grid">
+        <div class="kpi-card green card">
+            <div class="kpi-label">Draft</div>
+            <div class="kpi-value">@_overview.DraftCount</div>
+            <div class="text-muted">Robocze formularze</div>
+        </div>
+        <div class="kpi-card amber card">
+            <div class="kpi-label">Submitted</div>
+            <div class="kpi-value">@_overview.SubmittedCount</div>
+            <div class="text-muted">W toku akceptacji</div>
+        </div>
+        <div class="kpi-card green card">
+            <div class="kpi-label">Approved</div>
+            <div class="kpi-value">@_overview.ApprovedCount</div>
+            <div class="text-muted">Zatwierdzone</div>
+        </div>
+        <div class="kpi-card red card">
+            <div class="kpi-label">Overdue</div>
+            <div class="kpi-value">@_overview.OverdueCount</div>
+            <div class="text-muted">Po terminie</div>
+        </div>
+    </div>
+
+    <MudGrid Class="mt-4">
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-4 card">
+                <MudText Typo="Typo.h4" Class="mb-3">Moje formularze</MudText>
+                @foreach (var form in _overview.MyRecentForms)
+                {
+                    <div class="data-table-row">
+                        <div class="table-row-main">
+                            <div>
+                                <div>@form.FormTitle</div>
+                                <div class="text-muted mono">@form.FormCode</div>
+                            </div>
+                            <StatusBadge Status="@form.Status" />
+                        </div>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="5">
+            <MudPaper Class="pa-4 card">
+                <MudText Typo="Typo.h4" Class="mb-3">Raporty i alerty</MudText>
+                @foreach (var tile in _overview.ReportTiles)
+                {
+                    <div class="data-table-row">
+                        <div class="table-row-main">
+                            <div>
+                                <div>@tile.Title</div>
+                                <div class="text-muted">@tile.Description</div>
+                            </div>
+                            <div class="mono">@tile.Value</div>
+                        </div>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private DashboardOverviewDto? _overview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _overview = await DashboardService.GetOverviewAsync();
+    }
+}

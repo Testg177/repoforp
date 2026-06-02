@@ -1,0 +1,60 @@
+@implements IDisposable
+@inject IDashboardService DashboardService
+
+<div class="system-ticker">
+    <div class="tick-item">
+        <span class="led led-green @( _ticker.SystemOk ? string.Empty : "off")"></span>
+        system @( _ticker.SystemOk ? "ok" : "error")
+    </div>
+    <div class="tick-item">
+        <span class="led led-amber"></span>
+        do zatwierdzenia: <strong>@_ticker.PendingApprovals</strong>
+    </div>
+    <div class="tick-item">
+        <span class="led led-red @(_ticker.OverdueForms > 0 ? string.Empty : "off")"></span>
+        przeterminowane: <strong>@_ticker.OverdueForms</strong>
+    </div>
+    <div class="tick-item">
+        <span class="led led-amber"></span>
+        kolejka email: <strong>@_ticker.EmailQueueCount</strong>
+    </div>
+    <div class="tick-clock">@DateTime.Now.ToString("HH:mm:ss")</div>
+</div>
+
+@code {
+    private SystemTickerDto _ticker = new();
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _ = RefreshLoopAsync(_cts.Token);
+    }
+
+    private async Task LoadAsync()
+    {
+        _ticker = await DashboardService.GetSystemTickerAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await LoadAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

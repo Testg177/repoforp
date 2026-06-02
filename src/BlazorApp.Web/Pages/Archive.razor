@@ -1,0 +1,45 @@
+@page "/archive"
+@attribute [Authorize(Policy = "CanViewArchive")]
+@inject IArchiveService ArchiveService
+
+<PageTitle>Archiwum</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Archiwum</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="TestStorageAsync">Testuj polaczenie</MudButton>
+    @if (!string.IsNullOrWhiteSpace(_storageResult))
+    {
+        <MudText Class="mono">@_storageResult</MudText>
+    }
+</MudStack>
+
+<MudPaper Class="pa-4 card">
+    <MudText Typo="Typo.h4" Class="mb-3">Ostatnie dokumenty</MudText>
+    @foreach (var item in _documents)
+    {
+        <div class="data-table-row">
+            <div class="table-row-main">
+                <div>
+                    <div>@item.Title</div>
+                    <div class="text-muted mono">@item.CategoryName / @item.DocumentDateUtc.ToLocalTime().ToString("yyyy-MM-dd")</div>
+                </div>
+                <div class="mono">@item.FileExtension</div>
+            </div>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<ArchiveDocumentSummaryDto> _documents = [];
+    private string? _storageResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _documents = await ArchiveService.GetRecentDocumentsAsync();
+    }
+
+    private async Task TestStorageAsync()
+    {
+        _storageResult = await ArchiveService.TestStoragePathAsync() ? "storage ok" : "storage error";
+    }
+}

@@ -1,0 +1,20 @@
+@inherits LayoutComponentBase
+
+<PageTitle>BlazorApp</PageTitle>
+
+<div class="app-shell">
+    <SystemTicker />
+
+    <div class="app-body">
+        <aside class="sidebar">
+            <NavMenu />
+        </aside>
+
+        <main class="main-content">
+            <AppBar />
+            <article class="content-area">
+                @Body
+            </article>
+        </main>
+    </div>
+</div>

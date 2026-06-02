@@ -1,0 +1,68 @@
+@implements IAsyncDisposable
+@inject INotificationService NotificationService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<MudMenu Icon="@Icons.Material.Outlined.Notifications" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+    @if (_items.Count == 0)
+    {
+        <MudMenuItem Disabled="true">Brak nowych powiadomien</MudMenuItem>
+    }
+    else
+    {
+        @foreach (var item in _items)
+        {
+            <MudMenuItem Class="@(item.IsRead ? string.Empty : "notification-unread")" Href="@(item.ActionUrl ?? "/")">
+                <div class="notif-text">@item.Title</div>
+                <div class="text-muted mono">@item.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+            </MudMenuItem>
+        }
+    }
+</MudMenu>
+
+@code {
+    private readonly List<NotificationListItemDto> _items = [];
+    private HubConnection? _hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _items.AddRange(await NotificationService.GetUnreadAsync());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/hubs/notifications"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<NotificationListItemDto>("ReceiveNotification", item =>
+        {
+            _items.Insert(0, item);
+            return InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+        await _hubConnection.InvokeAsync("JoinUserGroup", userId);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

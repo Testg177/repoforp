@@ -1,0 +1,11 @@
+<AuthorizeView>
+    <Authorized>
+        <div class="login-display">
+            <span class="mono">@context.User.Identity?.Name</span>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Href="Identity/Account/LogOut">Wyloguj</MudButton>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Variant="Variant.Filled" Size="Size.Small" Href="/login">Zaloguj</MudButton>
+    </NotAuthorized>
+</AuthorizeView>

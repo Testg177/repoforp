@@ -1,0 +1,42 @@
+@implements IDisposable
+@inject NavigationManager NavigationManager
+
+<div class="topbar">
+    <div>
+        <div class="breadcrumb-path">@_breadcrumbMarkup</div>
+    </div>
+    <div class="topbar-actions">
+        <NotificationBell />
+        <LoginDisplay />
+    </div>
+</div>
+
+@code {
+    private string _breadcrumbMarkup = "/ system / dashboard";
+
+    protected override void OnInitialized()
+    {
+        UpdateBreadcrumb();
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        UpdateBreadcrumb();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateBreadcrumb()
+    {
+        var relative = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _breadcrumbMarkup = segments.Length == 0
+            ? "/ system / dashboard"
+            : "/ system / " + string.Join(" / ", segments).ToLowerInvariant();
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

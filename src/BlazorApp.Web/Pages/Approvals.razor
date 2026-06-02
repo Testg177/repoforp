@@ -1,0 +1,30 @@
+@page "/approvals"
+@attribute [Authorize(Policy = "CanApproveForms")]
+@inject IFormsService FormsService
+
+<PageTitle>Do zatwierdzenia</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Do zatwierdzenia</MudText>
+<MudPaper Class="pa-4 card">
+    @foreach (var form in _forms)
+    {
+        <div class="data-table-row">
+            <div class="table-row-main">
+                <div>
+                    <div>@form.FormTitle</div>
+                    <div class="text-muted mono">@form.SubmittedByName / @form.SubmittedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                </div>
+                <StatusBadge Status="@form.Status" />
+            </div>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<FormSummaryDto> _forms = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _forms = await FormsService.GetPendingApprovalsAsync();
+    }
+}

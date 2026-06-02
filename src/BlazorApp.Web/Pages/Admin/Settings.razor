@@ -1,0 +1,25 @@
+@page "/admin/settings"
+@attribute [Authorize(Policy = "CanManageUsers")]
+@inject IArchiveService ArchiveService
+
+<PageTitle>Ustawienia</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Ustawienia systemu</MudText>
+<MudPaper Class="pa-4 card">
+    <MudText Typo="Typo.h4" Class="mb-2">Archiwum</MudText>
+    <MudText Class="text-muted mb-4">Panel konfiguracji storage, retencji i integracji moze byc dalej rozwijany bez zmiany fundamentu backendu.</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="RunStorageTest">Testuj polaczenie</MudButton>
+    @if (!string.IsNullOrWhiteSpace(_result))
+    {
+        <MudText Class="mt-3 mono">@_result</MudText>
+    }
+</MudPaper>
+
+@code {
+    private string? _result;
+
+    private async Task RunStorageTest()
+    {
+        _result = await ArchiveService.TestStoragePathAsync() ? "storage ok" : "storage error";
+    }
+}

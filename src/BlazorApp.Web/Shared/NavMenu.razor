@@ -1,0 +1,44 @@
+<nav class="icon-rail">
+    <div class="rail-logo">SM</div>
+
+    <NavLink class="rail-item" href="/" Match="NavLinkMatch.All" data-title="Dashboard">
+        <MudIcon Icon="@Icons.Material.Outlined.Dashboard" />
+    </NavLink>
+
+    <AuthorizeView Policy="CanViewForms">
+        <NavLink class="rail-item" href="/forms" data-title="Formularze">
+            <MudIcon Icon="@Icons.Material.Outlined.Description" />
+        </NavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="CanViewArchive">
+        <NavLink class="rail-item" href="/archive" data-title="Archiwum">
+            <MudIcon Icon="@Icons.Material.Outlined.Archive" />
+        </NavLink>
+    </AuthorizeView>
+
+    <div class="rail-separator"></div>
+
+    <AuthorizeView Policy="CanApproveForms">
+        <NavLink class="rail-item" href="/approvals" data-title="Do zatwierdzenia">
+            <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" />
+        </NavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="CanViewReports">
+        <NavLink class="rail-item" href="/reports" data-title="Raporty">
+            <MudIcon Icon="@Icons.Material.Outlined.BarChart" />
+        </NavLink>
+    </AuthorizeView>
+
+    <div class="rail-spacer"></div>
+
+    <AuthorizeView Policy="CanManageUsers">
+        <NavLink class="rail-item" href="/admin/users" data-title="Uzytkownicy">
+            <MudIcon Icon="@Icons.Material.Outlined.People" />
+        </NavLink>
+        <NavLink class="rail-item" href="/admin/settings" data-title="Ustawienia">
+            <MudIcon Icon="@Icons.Material.Outlined.Settings" />
+        </NavLink>
+    </AuthorizeView>
+</nav>
