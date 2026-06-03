@@ -1,0 +1,103 @@
+@page "/forms"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "CanViewForms")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Formularze</MudText>
+
+<MudPaper Class="mb-4 pa-3" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudTextField @bind-Value="_search" @bind-Value:after="LoadData" Label="Szukaj"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect @bind-Value="_statusFilter" @bind-Value:after="LoadData" Label="Status"
+                       T="string" Clearable="true">
+                <MudSelectItem Value="@("Draft")">Szkic</MudSelectItem>
+                <MudSelectItem Value="@("Submitted")">Złożony</MudSelectItem>
+                <MudSelectItem Value="@("InReview")">W trakcie oceny</MudSelectItem>
+                <MudSelectItem Value="@("Approved")">Zatwierdzony</MudSelectItem>
+                <MudSelectItem Value="@("Rejected")">Odrzucony</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="5" Class="d-flex align-end justify-end">
+            <AuthorizeView Policy="CanViewForms">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Href="/forms/new">
+                    Nowe zgłoszenie
+                </MudButton>
+            </AuthorizeView>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="_submissions" Loading="@_loading" Hover="true" Breakpoint="Breakpoint.Sm"
+          RowsPerPage="20" Dense="true">
+    <HeaderContent>
+        <MudTh>Formularz</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Złożono</MudTh>
+        <MudTh>Termin</MudTh>
+        <MudTh>Akcje</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Formularz">@context.FormDefinition?.Title</MudTd>
+        <MudTd DataLabel="Status">
+            <StatusBadge Status="@context.Status" />
+            @if (context.IsLate && context.Status == SubmissionStatus.Draft)
+            {
+                <MudChip T="string" Color="Color.Error" Size="Size.Small" Class="ml-1">Spóźniony</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Złożono">@context.SubmittedAt.ToString("dd.MM.yyyy HH:mm")</MudTd>
+        <MudTd DataLabel="Termin">@context.DueDate.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                           Href="@($"/forms/{context.Id}")" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Brak wyników</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<FormSubmission> _submissions = [];
+    private bool _loading = true;
+    private string? _search;
+    private string? _statusFilter;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        await using var Db = await DbFactory.CreateDbContextAsync();
+        var query = Db.FormSubmissions
+            .Include(s => s.FormDefinition)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(_search))
+            query = query.Where(s => s.FormDefinition!.Title.Contains(_search));
+
+        if (!string.IsNullOrWhiteSpace(_statusFilter) && Enum.TryParse<SubmissionStatus>(_statusFilter, out var st))
+            query = query.Where(s => s.Status == st);
+
+        _submissions = await query
+            .OrderByDescending(s => s.SubmittedAt)
+            .Take(200)
+            .ToListAsync();
+
+        _loading = false;
+    }
+}

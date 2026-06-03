@@ -1,0 +1,143 @@
+@page "/archive/upload"
+@using BlazorApp.Application.Interfaces
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanViewArchive")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IArchiveFileService FileService
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Dodaj dokument</PageTitle>
+
+<div style="max-width:640px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                       OnClick="@(() => Nav.NavigateTo("/archive"))" />
+        <div style="font-size:18px;font-weight:700;color:#e6edf3;">Dodaj dokument do archiwum</div>
+    </div>
+
+    <div class="dash-panel" style="padding:24px;">
+        <MudTextField @bind-Value="_title" Label="Tytuł dokumentu *" Variant="Variant.Outlined"
+                      Margin="Margin.Normal" Required="true" />
+
+        <MudTextField @bind-Value="_description" Label="Opis" Variant="Variant.Outlined"
+                      Margin="Margin.Normal" Lines="3" />
+
+        <MudSelect @bind-Value="_categoryId" Label="Kategoria *" T="int"
+                   Variant="Variant.Outlined" Margin="Margin.Normal" Required="true">
+            @foreach (var c in _categories)
+            {
+                <MudSelectItem Value="@c.Id">@c.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudTextField @bind-Value="_documentNumber" Label="Numer dokumentu"
+                      Variant="Variant.Outlined" Margin="Margin.Normal" />
+
+        <MudDatePicker @bind-Date="_documentDate" Label="Data dokumentu *"
+                       Variant="Variant.Outlined" Margin="Margin.Normal" Required="true" />
+
+        <MudTextField @bind-Value="_tagsRaw" Label="Tagi (oddzielone przecinkami)"
+                      Variant="Variant.Outlined" Margin="Margin.Normal"
+                      HelperText="np. faktura, 2024, finansowy" />
+
+        <div style="margin:16px 0 8px;">
+            <div style="font-size:12px;color:#7d8590;margin-bottom:8px;">Plik *</div>
+            <InputFile OnChange="OnFileSelected" accept=".pdf,.jpg,.jpeg,.png,.tiff,.xlsx,.docx"
+                       style="display:none;" id="fileInput" />
+            <label for="fileInput"
+                   style="display:inline-flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(88,166,255,0.1);border:1px dashed rgba(88,166,255,0.4);border-radius:8px;cursor:pointer;font-size:13px;color:#58a6ff;transition:background .15s;">
+                <MudIcon Icon="@Icons.Material.Filled.Upload" Size="Size.Small" />
+                @(_file is null ? "Wybierz plik..." : _file.Name)
+            </label>
+            @if (_file is not null)
+            {
+                <span style="margin-left:10px;font-size:11px;color:#484f58;">@FormatSize(_file.Size)</span>
+            }
+        </div>
+
+        <div style="display:flex;gap:12px;margin-top:24px;">
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => Nav.NavigateTo("/archive"))">Anuluj</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Upload"
+                       Disabled="@(_saving || _file is null || string.IsNullOrWhiteSpace(_title) || _categoryId == 0)">
+                @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Prześlij dokument
+            </MudButton>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ArchiveCategory> _categories = [];
+    private IBrowserFile? _file;
+    private string _title = "", _description = "", _documentNumber = "", _tagsRaw = "";
+    private int _categoryId;
+    private DateTime? _documentDate = DateTime.Today;
+    private bool _saving;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _categories = await db.ArchiveCategories.Where(c => c.IsActive).OrderBy(c => c.Name).ToListAsync();
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e) => _file = e.File;
+
+    private async Task Upload()
+    {
+        if (_file is null || _userId is null) return;
+        _saving = true;
+
+        try
+        {
+            await using var stream = _file.OpenReadStream(maxAllowedSize: 52_428_800); // 50 MB
+            var (relativePath, storedName, checksum) = await FileService.SaveFileAsync(
+                stream, _file.Name,
+                _categories.FirstOrDefault(c => c.Id == _categoryId)?.Name ?? "general");
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.ArchiveDocuments.Add(new ArchiveDocument
+            {
+                Title          = _title,
+                Description    = _description.Length > 0 ? _description : null,
+                CategoryId     = _categoryId,
+                FileName       = _file.Name,
+                RelativePath   = relativePath,
+                FileExtension  = Path.GetExtension(_file.Name).ToLower(),
+                FileSizeBytes  = _file.Size,
+                DocumentDate   = _documentDate?.ToUniversalTime() ?? DateTime.UtcNow,
+                DocumentNumber = _documentNumber.Length > 0 ? _documentNumber : null,
+                Tags           = _tagsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                UploadedByUserId = _userId,
+                Checksum       = checksum
+            });
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Dokument dodany do archiwum", Severity.Success);
+            Nav.NavigateTo("/archive");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Błąd: {ex.Message}", Severity.Error);
+            _saving = false;
+        }
+    }
+
+    private static string FormatSize(long b)
+    {
+        if (b < 1024) return $"{b} B";
+        if (b < 1024 * 1024) return $"{b / 1024} KB";
+        return $"{b / (1024 * 1024)} MB";
+    }
+}

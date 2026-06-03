@@ -1,0 +1,107 @@
+@page "/reports"
+@using BlazorApp.Application.Interfaces
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "CanViewReports")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IPdfService PdfService
+@inject IJSRuntime JS
+
+<MudText Typo="Typo.h4" Class="mb-4">Raporty</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Złożone dzisiaj</MudText>
+                <MudText Typo="Typo.h3" Color="Color.Primary">@_todayCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Oczekujące na zatwierdzenie</MudText>
+                <MudText Typo="Typo.h3" Color="Color.Warning">@_pendingCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Spóźnione</MudText>
+                <MudText Typo="Typo.h3" Color="Color.Error">@_overdueCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">Zatwierdzone w tym miesiącu</MudText>
+                <MudText Typo="Typo.h3" Color="Color.Success">@_approvedMonthCount</MudText>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="mt-4 pa-4" Elevation="1">
+    <MudText Typo="Typo.h6" Class="mb-3">Generuj raport PDF</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudDatePicker @bind-Date="_dateFrom" Label="Od" />
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudDatePicker @bind-Date="_dateTo" Label="Do" />
+        </MudItem>
+        <MudItem xs="12" sm="4" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                       OnClick="GeneratePdfAsync" Disabled="@_generating">
+                Generuj PDF
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    private int _todayCount, _pendingCount, _overdueCount, _approvedMonthCount;
+    private DateTime? _dateFrom = DateTime.Today.AddMonths(-1);
+    private DateTime? _dateTo = DateTime.Today;
+    private bool _generating;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+        var monthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        await using var Db = await DbFactory.CreateDbContextAsync();
+        _todayCount = await Db.FormSubmissions
+            .CountAsync(s => s.SubmittedAt.Date == today);
+        _pendingCount = await Db.FormSubmissions
+            .CountAsync(s => s.Status == SubmissionStatus.Submitted || s.Status == SubmissionStatus.InReview);
+        _overdueCount = await Db.FormSubmissions
+            .CountAsync(s => s.IsLate && s.Status == SubmissionStatus.Draft);
+        _approvedMonthCount = await Db.FormSubmissions
+            .CountAsync(s => s.Status == SubmissionStatus.Approved && s.ReviewedAt >= monthStart);
+    }
+
+    private async Task GeneratePdfAsync()
+    {
+        if (_dateFrom is null || _dateTo is null) return;
+        _generating = true;
+        await using var Db = await DbFactory.CreateDbContextAsync();
+        var submissions = await Db.FormSubmissions
+            .Include(s => s.FormDefinition)
+            .Where(s => s.SubmittedAt >= _dateFrom.Value && s.SubmittedAt <= _dateTo.Value.AddDays(1))
+            .ToListAsync();
+
+        var pdf = PdfService.GenerateReportPdf(
+            $"Raport formularzy {_dateFrom:dd.MM.yyyy}–{_dateTo:dd.MM.yyyy}",
+            submissions);
+
+        var base64 = Convert.ToBase64String(pdf);
+        await JS.InvokeVoidAsync("downloadPdf", $"raport_{DateTime.Today:yyyyMMdd}.pdf", base64);
+        _generating = false;
+    }
+}

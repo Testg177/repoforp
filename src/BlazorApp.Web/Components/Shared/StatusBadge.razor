@@ -1,0 +1,32 @@
+@using BlazorApp.Domain.Enums
+@using MudBlazor
+
+<MudChip T="string" Color="@GetColor()" Size="Size.Small" Variant="Variant.Filled">
+    @GetLabel()
+</MudChip>
+
+@code {
+    [Parameter] public SubmissionStatus Status { get; set; }
+
+    private Color GetColor() => Status switch
+    {
+        SubmissionStatus.Draft => Color.Default,
+        SubmissionStatus.Submitted => Color.Info,
+        SubmissionStatus.InReview => Color.Warning,
+        SubmissionStatus.Approved => Color.Success,
+        SubmissionStatus.Rejected => Color.Error,
+        SubmissionStatus.RequiresChanges => Color.Warning,
+        _ => Color.Default
+    };
+
+    private string GetLabel() => Status switch
+    {
+        SubmissionStatus.Draft => "Szkic",
+        SubmissionStatus.Submitted => "Złożony",
+        SubmissionStatus.InReview => "W trakcie oceny",
+        SubmissionStatus.Approved => "Zatwierdzony",
+        SubmissionStatus.Rejected => "Odrzucony",
+        SubmissionStatus.RequiresChanges => "Wymaga poprawek",
+        _ => Status.ToString()
+    };
+}

@@ -1,0 +1,50 @@
+@implements IDisposable
+@inject NavigationManager Nav
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+
+<div class="sz-nav">
+    <AuthorizeView>
+        <Authorized>
+            <NavItem Href="/" Icon="@Icons.Material.Filled.Dashboard" Title="Dashboard" Exact="true" />
+
+            <AuthorizeView Policy="CanViewForms" Context="_">
+                <NavItem Href="/forms" Icon="@Icons.Material.Filled.Assignment" Title="Formularze" />
+            </AuthorizeView>
+
+            <AuthorizeView Policy="CanViewArchive" Context="_">
+                <NavItem Href="/archive" Icon="@Icons.Material.Filled.Folder" Title="Archiwum" />
+            </AuthorizeView>
+
+            <AuthorizeView Policy="CanApproveForms" Context="_">
+                <NavItem Href="/approvals" Icon="@Icons.Material.Filled.CheckCircle" Title="Do zatwierdzenia" />
+            </AuthorizeView>
+
+            <div class="sz-nav-divider"></div>
+
+            <AuthorizeView Policy="CanViewReports" Context="_">
+                <NavItem Href="/reports" Icon="@Icons.Material.Filled.BarChart" Title="Raporty" />
+            </AuthorizeView>
+
+            <AuthorizeView Policy="CanManageUsers" Context="_">
+                <NavItem Href="/admin/users" Icon="@Icons.Material.Filled.AdminPanelSettings" Title="Administracja" />
+            </AuthorizeView>
+
+            <AuthorizeView Policy="CanViewAudit" Context="_">
+                <NavItem Href="/audit" Icon="@Icons.Material.Filled.History" Title="Logi audytu" />
+            </AuthorizeView>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

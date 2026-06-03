@@ -1,0 +1,33 @@
+@inject NavigationManager Nav
+
+<style>
+    .adm-tab { padding:5px 14px;border-radius:6px;font-size:12px;color:#7d8590;border:1px solid rgba(240,246,252,0.1);text-decoration:none;transition:all .15s; }
+    .adm-tab:hover { color:#e6edf3;border-color:rgba(240,246,252,0.2); }
+    .adm-tab-active { background:rgba(88,166,255,0.15);color:#58a6ff !important;border-color:rgba(88,166,255,0.3) !important; }
+</style>
+
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="font-size:18px;font-weight:700;color:#e6edf3;margin-right:8px;">Administracja</div>
+    @foreach (var tab in _tabs)
+    {
+        <a href="@tab.Href" class="adm-tab @(IsActive(tab.Href) ? "adm-tab-active" : "")">@tab.Label</a>
+    }
+</div>
+
+@code {
+    private record TabDef(string Href, string Label);
+
+    private static readonly TabDef[] _tabs =
+    [
+        new("/admin/users",       "Użytkownicy"),
+        new("/admin/roles",       "Role"),
+        new("/admin/forms",       "Formularze"),
+        new("/admin/permissions", "Uprawnienia"),
+    ];
+
+    private bool IsActive(string href)
+    {
+        var rel = "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/').ToLower();
+        return rel == href || rel.StartsWith(href + "/");
+    }
+}

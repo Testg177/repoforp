@@ -1,0 +1,137 @@
+@page "/notifications"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Powiadomienia</PageTitle>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div>
+        <div style="font-size:18px;font-weight:700;color:#e6edf3;">Powiadomienia</div>
+        <div style="font-size:12px;color:#7d8590;margin-top:2px;">@_unreadCount nieprzeczytanych</div>
+    </div>
+    @if (_unreadCount > 0)
+    {
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary"
+                   OnClick="MarkAllRead">Oznacz wszystkie jako przeczytane</MudButton>
+    }
+</div>
+
+<div class="dash-panel" style="max-width:760px;">
+    @if (_loading)
+    {
+        <div style="padding:40px;text-align:center;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+        </div>
+    }
+    else if (_notifications.Count == 0)
+    {
+        <div style="padding:48px;text-align:center;color:#484f58;">
+            <MudIcon Icon="@Icons.Material.Filled.NotificationsNone" Style="font-size:3rem;opacity:.3;" />
+            <div style="margin-top:12px;font-size:14px;">Brak powiadomień</div>
+        </div>
+    }
+    else
+    {
+        @foreach (var n in _notifications)
+        {
+            <div class="notif-row" style="@(n.IsRead ? "" : "background:rgba(88,166,255,0.04);")" @onclick="() => MarkRead(n)">
+                <div class="notif-icon @GetColor(n.Type)" style="display:flex;align-items:center;justify-content:center;">
+                    <MudIcon Icon="@GetIcon(n.Type)" Size="Size.Small" Style="color:inherit;opacity:.8;" />
+                </div>
+                <div class="notif-text" style="flex:1;">
+                    <div class="notif-title" style="@(n.IsRead ? "" : "font-weight:600;")">@n.Title</div>
+                    <div style="font-size:12px;color:#7d8590;margin-top:2px;">@n.Message</div>
+                    <div class="notif-time" style="margin-top:3px;">@FormatAgo(n.CreatedAt)</div>
+                </div>
+                @if (!n.IsRead)
+                {
+                    <div style="width:7px;height:7px;border-radius:50%;background:#58a6ff;flex-shrink:0;margin-top:8px;"></div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<Notification> _notifications = [];
+    private int _unreadCount;
+    private bool _loading = true;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _notifications = await db.Notifications
+            .Where(n => n.RecipientUserId == _userId)
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(50)
+            .ToListAsync();
+        _unreadCount = _notifications.Count(n => !n.IsRead);
+        _loading = false;
+    }
+
+    private async Task MarkRead(Notification n)
+    {
+        if (n.IsRead) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var item = await db.Notifications.FindAsync(n.Id);
+        if (item is not null) { item.IsRead = true; await db.SaveChangesAsync(); }
+        n.IsRead = true;
+        _unreadCount = Math.Max(0, _unreadCount - 1);
+    }
+
+    private async Task MarkAllRead()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await db.Notifications
+            .Where(n => n.RecipientUserId == _userId && !n.IsRead)
+            .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true));
+        _notifications.ForEach(n => n.IsRead = true);
+        _unreadCount = 0;
+    }
+
+    private static string GetColor(NotificationType t) => t switch
+    {
+        NotificationType.FormApproved             => "green",
+        NotificationType.FormSubmittedForApproval => "blue",
+        NotificationType.FormRejected             => "red",
+        NotificationType.FormDeadlineReminder     => "orange",
+        NotificationType.SystemAlert              => "red",
+        _ => "blue"
+    };
+
+    private static string GetIcon(NotificationType t) => t switch
+    {
+        NotificationType.FormApproved             => Icons.Material.Filled.CheckCircle,
+        NotificationType.FormRejected             => Icons.Material.Filled.Cancel,
+        NotificationType.FormSubmittedForApproval => Icons.Material.Filled.Assignment,
+        NotificationType.FormDeadlineReminder     => Icons.Material.Filled.AccessTime,
+        NotificationType.SystemAlert              => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.Notifications
+    };
+
+    private static string FormatAgo(DateTime dt)
+    {
+        var d = DateTime.UtcNow - dt;
+        if (d.TotalMinutes < 1)  return "przed chwilą";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes} min temu";
+        if (d.TotalHours   < 24) return $"{(int)d.TotalHours} godz. temu";
+        return dt.ToString("dd.MM.yyyy HH:mm");
+    }
+}

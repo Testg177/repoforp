@@ -1,0 +1,161 @@
+@page "/admin/permissions"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanManageUsers")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Uprawnienia ról</PageTitle>
+
+<AdminTabs />
+
+<style>
+    .perm-cell { width:60px;text-align:center; }
+    .perm-cb { width:16px;height:16px;accent-color:#58a6ff;cursor:pointer; }
+</style>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+        <div style="font-size:13px;color:#7d8590;">Wybierz rolę:</div>
+        @foreach (var role in _roles)
+        {
+            var r = role;
+            <button @onclick="@(() => SelectRole(r))"
+                    style="padding:6px 16px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid @(_selectedRole == r ? "rgba(88,166,255,0.4)" : "rgba(240,246,252,0.1)");background:@(_selectedRole == r ? "rgba(88,166,255,0.12)" : "transparent");color:@(_selectedRole == r ? "#58a6ff" : "#7d8590");">
+                @r
+            </button>
+        }
+    </div>
+
+    @if (_selectedRole is not null)
+    {
+        <div class="dash-panel" style="overflow-x:auto;">
+            <div class="dash-panel-header">
+                <span class="dash-panel-title">Uprawnienia roli: @_selectedRole</span>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           OnClick="Save" Disabled="@_saving">
+                    @(_saving ? "Zapisywanie..." : "Zapisz uprawnienia")
+                </MudButton>
+            </div>
+            <table style="width:100%;border-collapse:collapse;min-width:600px;">
+                <thead>
+                    <tr style="border-bottom:1px solid rgba(240,246,252,0.08);">
+                        <th style="padding:10px 18px;text-align:left;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;min-width:180px;">Moduł</th>
+                        @foreach (var h in new[]{"Widok","Tworzenie","Edycja","Usuwanie","Zatwierdzanie","Eksport"})
+                        {
+                            <th class="perm-cell" style="padding:10px 8px;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;">@h</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (ModuleType module in Enum.GetValues<ModuleType>())
+                    {
+                        var m = module;
+                        var perm = GetOrCreate(m);
+                        <tr style="border-bottom:1px solid rgba(240,246,252,0.04);">
+                            <td style="padding:11px 18px;font-size:13px;color:#e6edf3;font-weight:500;">@GetModuleLabel(m)</td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanView"   @onchange="@(e => perm.CanView   = (bool)(e.Value??false))" /></td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanCreate" @onchange="@(e => perm.CanCreate = (bool)(e.Value??false))" /></td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanEdit"   @onchange="@(e => perm.CanEdit   = (bool)(e.Value??false))" /></td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanDelete" @onchange="@(e => perm.CanDelete = (bool)(e.Value??false))" /></td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanApprove" @onchange="@(e => perm.CanApprove= (bool)(e.Value??false))" /></td>
+                            <td class="perm-cell" style="padding:11px 8px;"><input type="checkbox" class="perm-cb" checked="@perm.CanExport" @onchange="@(e => perm.CanExport = (bool)(e.Value??false))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private List<string> _roles = [];
+    private string? _selectedRole;
+    private string? _selectedRoleId;
+    private Dictionary<ModuleType, ModulePermission> _permissions = new();
+    private bool _loading = true, _saving;
+
+    [SupplyParameterFromQuery(Name = "role")]
+    public string? RoleParam { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _roles = await db.Roles.Select(r => r.Name!).OrderBy(r => r).ToListAsync();
+        _loading = false;
+
+        if (!string.IsNullOrEmpty(RoleParam) && _roles.Contains(RoleParam))
+            await SelectRole(RoleParam);
+    }
+
+    private async Task SelectRole(string role)
+    {
+        _selectedRole = role;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var roleEntity = await db.Roles.FirstOrDefaultAsync(r => r.Name == role);
+        _selectedRoleId = roleEntity?.Id;
+        if (_selectedRoleId is null) return;
+
+        _permissions = await db.ModulePermissions
+            .Where(p => p.RoleId == _selectedRoleId)
+            .ToDictionaryAsync(p => p.Module);
+    }
+
+    private ModulePermission GetOrCreate(ModuleType module)
+    {
+        if (!_permissions.TryGetValue(module, out var p))
+        {
+            p = new ModulePermission { Module = module, RoleId = _selectedRoleId };
+            _permissions[module] = p;
+        }
+        return p;
+    }
+
+    private async Task Save()
+    {
+        if (_selectedRoleId is null) return;
+        _saving = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var existing = await db.ModulePermissions
+            .Where(p => p.RoleId == _selectedRoleId)
+            .ToListAsync();
+        db.ModulePermissions.RemoveRange(existing);
+
+        foreach (var (_, perm) in _permissions)
+        {
+            perm.RoleId = _selectedRoleId;
+            perm.UserId = null;
+            perm.Id = 0;
+            db.ModulePermissions.Add(perm);
+        }
+
+        await db.SaveChangesAsync();
+        _saving = false;
+        Snackbar.Add("Uprawnienia zapisane", Severity.Success);
+    }
+
+    private static string GetModuleLabel(ModuleType m) => m switch
+    {
+        ModuleType.Dashboard       => "Dashboard",
+        ModuleType.Forms           => "Formularze",
+        ModuleType.Archive         => "Archiwum",
+        ModuleType.Reports         => "Raporty",
+        ModuleType.UserManagement  => "Zarządzanie użytkownikami",
+        ModuleType.SystemSettings  => "Ustawienia systemu",
+        ModuleType.Notifications   => "Powiadomienia",
+        ModuleType.Audit           => "Logi audytu",
+        _ => m.ToString()
+    };
+}

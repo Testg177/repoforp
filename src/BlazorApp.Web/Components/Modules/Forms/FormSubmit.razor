@@ -1,0 +1,182 @@
+@page "/forms/new"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using System.Text.Json
+@attribute [Authorize(Policy = "CanViewForms")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Nowe zgłoszenie</PageTitle>
+
+<style>
+    .fs-label  { display:block;font-size:11px;font-weight:500;color:#7d8590;margin-bottom:6px; }
+    .fs-input  { width:100%;padding:10px 12px;background:rgba(240,246,252,0.04);border:1px solid rgba(240,246,252,0.12);border-radius:8px;color:#e6edf3;font-size:13px;outline:none;transition:border-color .15s;box-sizing:border-box; }
+    .fs-input:focus  { border-color:rgba(88,166,255,0.5);background:rgba(240,246,252,0.06); }
+    .fs-input::placeholder { color:#484f58; }
+    .fs-select { width:100%;padding:10px 12px;background:#1c2128;border:1px solid rgba(240,246,252,0.12);border-radius:8px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box;cursor:pointer; }
+    .fs-select:focus { border-color:rgba(88,166,255,0.5); }
+    .fs-select option { background:#1c2128;color:#e6edf3; }
+    .fs-btn-cancel { padding:10px 18px;border-radius:8px;border:1px solid rgba(240,246,252,0.15);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer;transition:background .15s; }
+    .fs-btn-cancel:hover { background:rgba(240,246,252,0.06); }
+    .fs-btn-draft  { padding:10px 18px;border-radius:8px;border:1px solid rgba(240,246,252,0.2);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer; }
+    .fs-btn-draft:hover { background:rgba(240,246,252,0.06); }
+    .fs-btn-draft:disabled, .fs-btn-submit:disabled { opacity:.4;cursor:not-allowed; }
+    .fs-btn-submit { padding:10px 22px;border-radius:8px;border:none;background:#58a6ff;color:#0d1117;font-size:13px;font-weight:600;cursor:pointer; }
+    .fs-btn-submit:hover:not(:disabled) { background:#79b8ff; }
+</style>
+
+<div style="max-width:680px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" OnClick="GoBack" />
+        <div style="font-size:18px;font-weight:700;color:#e6edf3;">Nowe zgłoszenie</div>
+    </div>
+
+    <div class="dash-panel" style="padding:24px;">
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_forms.Count == 0)
+        {
+            <div style="padding:32px;text-align:center;color:#484f58;font-size:13px;">
+                Brak dostępnych formularzy. Skontaktuj się z administratorem.
+            </div>
+            <div style="margin-top:16px;text-align:center;">
+                <MudButton Variant="Variant.Outlined" OnClick="GoBack">Wróć</MudButton>
+            </div>
+        }
+        else
+        {
+            <div style="margin-bottom:16px;">
+                <label class="fs-label">Typ formularza *</label>
+                <select class="fs-select" @onchange="HandleFormChange">
+                    <option value="0">— Wybierz formularz —</option>
+                    @foreach (var f in _forms)
+                    {
+                        <option value="@f.Id">@f.Title (@f.Code)</option>
+                    }
+                </select>
+            </div>
+
+            @if (_selectedForm is not null)
+            {
+                <div style="margin-bottom:16px;padding:12px 14px;background:rgba(88,166,255,0.06);border-radius:8px;border:1px solid rgba(88,166,255,0.18);">
+                    <div style="font-size:13px;color:#58a6ff;font-weight:600;margin-bottom:4px;">@_selectedForm.Title</div>
+                    @if (!string.IsNullOrEmpty(_selectedForm.Description))
+                    {
+                        <div style="font-size:12px;color:#7d8590;margin-bottom:6px;">@_selectedForm.Description</div>
+                    }
+                    <div style="display:flex;gap:16px;font-size:11px;color:#484f58;flex-wrap:wrap;">
+                        <span>Termin: <strong style="color:#e6edf3;">@_selectedForm.EscalationAfterDays dni</strong></span>
+                        @if (_selectedForm.RequiresApproval)
+                        {
+                            <span>Zatwierdzenie: <strong style="color:#d29922;">wymagane</strong></span>
+                        }
+                        else
+                        {
+                            <span>Zatwierdzenie: <strong style="color:#3fb950;">nie wymagane</strong></span>
+                        }
+                    </div>
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <label class="fs-label">Uwagi / opis zgłoszenia</label>
+                    <textarea @bind="_notes" class="fs-input" rows="4"
+                              placeholder="Opcjonalne uwagi..."></textarea>
+                </div>
+
+                <div style="margin-bottom:20px;">
+                    <label class="fs-label">Termin realizacji</label>
+                    <input type="date" class="fs-input"
+                           value="@_dueDateStr"
+                           @onchange="HandleDateChange" />
+                </div>
+            }
+
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                <button type="button" class="fs-btn-cancel" @onclick="GoBack">Anuluj</button>
+                <button type="button" class="fs-btn-draft"
+                        disabled="@(_selectedFormId == 0 || _saving)"
+                        @onclick="SaveDraft">
+                    Zapisz szkic
+                </button>
+                <button type="button" class="fs-btn-submit"
+                        disabled="@(_selectedFormId == 0 || _saving)"
+                        @onclick="SubmitForm">
+                    @(_saving ? "Wysyłanie..." : "Złóż zgłoszenie")
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<FormDefinition> _forms = [];
+    private FormDefinition?      _selectedForm;
+    private int                  _selectedFormId;
+    private string?              _notes;
+    private string               _dueDateStr = DateTime.Today.AddDays(7).ToString("yyyy-MM-dd");
+    private bool                 _loading = true, _saving;
+    private string?              _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId  = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _forms = await db.FormDefinitions.Where(f => f.IsActive).OrderBy(f => f.Title).ToListAsync();
+        _loading = false;
+    }
+
+    private void GoBack() => Nav.NavigateTo("/forms");
+
+    private void HandleFormChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selectedFormId = id;
+            _selectedForm   = id > 0 ? _forms.FirstOrDefault(f => f.Id == id) : null;
+            if (_selectedForm?.EscalationAfterDays is int days)
+                _dueDateStr = DateTime.Today.AddDays(days).ToString("yyyy-MM-dd");
+        }
+    }
+
+    private void HandleDateChange(ChangeEventArgs e)
+        => _dueDateStr = e.Value?.ToString() ?? _dueDateStr;
+
+    private Task SaveDraft()   => Save(SubmissionStatus.Draft);
+    private Task SubmitForm()  => Save(SubmissionStatus.Submitted);
+
+    private async Task Save(SubmissionStatus status)
+    {
+        if (_selectedFormId == 0 || _userId is null) return;
+        _saving = true;
+
+        DateTime.TryParse(_dueDateStr, out var due);
+        if (due == default) due = DateTime.Today.AddDays(7);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.FormSubmissions.Add(new FormSubmission
+        {
+            FormDefinitionId  = _selectedFormId,
+            SubmittedByUserId = _userId,
+            Status            = status,
+            DueDate           = due.ToUniversalTime(),
+            FieldValues       = string.IsNullOrWhiteSpace(_notes)
+                ? new()
+                : new() { ["notes"] = JsonSerializer.SerializeToElement(_notes) }
+        });
+        await db.SaveChangesAsync();
+
+        Snackbar.Add(status == SubmissionStatus.Draft ? "Szkic zapisany" : "Zgłoszenie złożone pomyślnie", Severity.Success);
+        Nav.NavigateTo("/forms");
+    }
+}

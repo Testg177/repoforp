@@ -1,0 +1,139 @@
+@inherits LayoutComponentBase
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+@using BlazorApp.Domain.Entities
+@using Microsoft.AspNetCore.Identity
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView>
+    <Authorizing>
+        <div style="height:100vh;display:flex;align-items:center;justify-content:center;background:#0d1117;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    </Authorizing>
+    <Authorized>
+        <div class="sz-shell">
+            <TopStatusBar />
+            <div class="sz-body">
+                <aside class="sz-sidebar">
+                    <div class="sz-logo">
+                        <div class="sz-logo-box">SM</div>
+                    </div>
+                    <NavMenu />
+                </aside>
+                <div class="sz-main">
+                    <header class="sz-header">
+                        <div class="sz-breadcrumb">/ system / <span>@_pageName</span></div>
+                        <div class="sz-header-actions">
+                            <button class="sz-icon-btn" title="Ustawienia" @onclick="@(() => Nav.NavigateTo("/admin/users"))">
+                                <MudIcon Icon="@Icons.Material.Filled.Settings" Size="Size.Small" />
+                            </button>
+                            <button class="sz-icon-btn" title="Powiadomienia" @onclick="@(() => Nav.NavigateTo("/notifications"))">
+                                <MudIcon Icon="@Icons.Material.Filled.Notifications" Size="Size.Small" />
+                            </button>
+                            <div class="sz-user" @onclick="@(() => Nav.NavigateTo("/Account/Manage"))">
+                                <div class="sz-avatar">@_initials</div>
+                                <span class="sz-user-name">@_displayName</span>
+                            </div>
+                        </div>
+                    </header>
+                    <div class="sz-content">@Body</div>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private string _pageName = "dashboard";
+    private string _initials = "?";
+    private string _displayName = "";
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#58a6ff",
+            Secondary = "#d29922",
+            Background = "#0d1117",
+            Surface = "#161b22",
+            AppbarBackground = "#161b22",
+            DrawerBackground = "#0d1117",
+            TextPrimary = "#e6edf3",
+            TextSecondary = "#7d8590",
+            ActionDefault = "#7d8590",
+            LinesDefault = "rgba(240,246,252,0.08)",
+            TableLines = "rgba(240,246,252,0.08)",
+            Divider = "rgba(240,246,252,0.08)",
+            OverlayLight = "rgba(0,0,0,0.5)",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#58a6ff",
+            Secondary = "#d29922",
+            Background = "#0d1117",
+            Surface = "#161b22",
+            AppbarBackground = "#161b22",
+            DrawerBackground = "#0d1117",
+            TextPrimary = "#e6edf3",
+            TextSecondary = "#7d8590",
+            ActionDefault = "#7d8590",
+            LinesDefault = "rgba(240,246,252,0.08)",
+            TableLines = "rgba(240,246,252,0.08)",
+            Divider = "rgba(240,246,252,0.08)",
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += (_, _) => { UpdatePageName(); InvokeAsync(StateHasChanged); };
+        UpdatePageName();
+
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        var user = auth.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var appUser = await UserManager.GetUserAsync(user);
+            if (appUser is not null)
+            {
+                _displayName = appUser.FullName.Length > 0 ? appUser.FullName : appUser.Email ?? "";
+                _initials = GetInitials(appUser.FirstName, appUser.LastName, appUser.Email);
+            }
+        }
+    }
+
+    private void UpdatePageName()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/').ToLower();
+        _pageName = path switch
+        {
+            "" or "home" => "dashboard",
+            "forms"      => "formularze",
+            "archive"    => "archiwum",
+            "approvals"  => "zatwierdzenia",
+            "reports"    => "raporty",
+            _ when path.StartsWith("admin") => "administracja",
+            _ when path.StartsWith("audit") => "audyt",
+            _ => path
+        };
+    }
+
+    private static string GetInitials(string first, string last, string? email)
+    {
+        if (!string.IsNullOrEmpty(first) && !string.IsNullOrEmpty(last))
+            return $"{first[0]}{last[0]}".ToUpper();
+        if (!string.IsNullOrEmpty(email))
+            return email[0].ToString().ToUpper();
+        return "?";
+    }
+}

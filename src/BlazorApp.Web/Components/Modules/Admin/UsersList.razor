@@ -1,0 +1,94 @@
+@page "/admin/users"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Infrastructure.Data
+@using MudBlazor
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "CanManageUsers")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+
+<AdminTabs />
+
+<MudPaper Class="mb-4 pa-3" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_search" @bind-Value:after="LoadData" Label="Szukaj użytkownika"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" Class="d-flex align-end justify-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       Href="/admin/users/new">
+                Dodaj użytkownika
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="_users" Loading="@_loading" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>Imię i nazwisko</MudTh>
+        <MudTh>Email</MudTh>
+        <MudTh>Dział</MudTh>
+        <MudTh>Stanowisko</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Ostatnie logowanie</MudTh>
+        <MudTh>Akcje</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Imię i nazwisko">@context.FullName</MudTd>
+        <MudTd DataLabel="Email">@context.Email</MudTd>
+        <MudTd DataLabel="Dział">@context.Department</MudTd>
+        <MudTd DataLabel="Stanowisko">@context.Position</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Color="@(context.IsActive ? Color.Success : Color.Error)" Size="Size.Small">
+                @(context.IsActive ? "Aktywny" : "Nieaktywny")
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Logowanie">@(context.LastLoginAt?.ToString("dd.MM.yyyy HH:mm") ?? "—")</MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                           Href="@($"/admin/users/{context.Id}")" />
+            <MudIconButton Icon="@(context.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                           Size="Size.Small" Color="@(context.IsActive ? Color.Error : Color.Success)"
+                           OnClick="@(() => ToggleActiveAsync(context))" />
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    private List<ApplicationUser> _users = [];
+    private bool _loading = true;
+    private string? _search;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var query = db.Users.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(_search))
+            query = query.Where(u => u.FirstName.Contains(_search) ||
+                                     u.LastName.Contains(_search) ||
+                                     u.Email!.Contains(_search));
+
+        _users = await query.OrderBy(u => u.LastName).Take(200).ToListAsync();
+        _loading = false;
+    }
+
+    private async Task ToggleActiveAsync(ApplicationUser user)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var u = await db.Users.FindAsync(user.Id);
+        if (u is null) return;
+        u.IsActive = !u.IsActive;
+        await db.SaveChangesAsync();
+        user.IsActive = u.IsActive;
+        Snackbar.Add($"Użytkownik {(u.IsActive ? "aktywowany" : "dezaktywowany")}", Severity.Info);
+    }
+}

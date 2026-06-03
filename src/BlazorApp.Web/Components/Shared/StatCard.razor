@@ -1,0 +1,39 @@
+@* Color: blue | yellow | red | green *@
+
+<div class="dash-stat-card">
+    <div class="dash-stat-label">@Label</div>
+    <div class="dash-stat-value" style="color:@ColorHex">@Value.ToString("D2")</div>
+    <div class="dash-stat-delta">
+        @if (Delta == 0)
+        {
+            <span class="delta-icon neutral"></span>
+            <span>bez zmian</span>
+        }
+        else if (Delta > 0)
+        {
+            <span class="delta-icon up"></span>
+            <span class="delta-text up">+@Delta @DeltaLabel</span>
+        }
+        else
+        {
+            <span class="delta-icon down"></span>
+            <span class="delta-text down">@Delta @DeltaLabel</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public int Value { get; set; }
+    [Parameter] public string Color { get; set; } = "blue";
+    [Parameter] public int Delta { get; set; }
+    [Parameter] public string DeltaLabel { get; set; } = "";
+
+    private string ColorHex => Color switch
+    {
+        "yellow" => "#d29922",
+        "red"    => "#f85149",
+        "green"  => "#3fb950",
+        _        => "#58a6ff"
+    };
+}

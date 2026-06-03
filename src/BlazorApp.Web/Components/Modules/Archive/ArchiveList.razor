@@ -1,0 +1,114 @@
+@page "/archive"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Infrastructure.Data
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "CanViewArchive")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" Class="mb-4">Archiwum</MudText>
+
+<MudPaper Class="mb-4 pa-3" Elevation="1">
+    <MudGrid>
+        <MudItem xs="12" sm="4">
+            <MudTextField @bind-Value="_search" @bind-Value:after="LoadData" Label="Szukaj w archiwum"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect @bind-Value="_categoryId" @bind-Value:after="LoadData" Label="Kategoria"
+                       T="int?" Clearable="true">
+                @foreach (var cat in _categories)
+                {
+                    <MudSelectItem Value="@((int?)cat.Id)">@cat.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="5" Class="d-flex align-end justify-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Upload"
+                       Href="/archive/upload">
+                Dodaj dokument
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable Items="_documents" Loading="@_loading" Hover="true" Breakpoint="Breakpoint.Sm"
+          RowsPerPage="20" Dense="true">
+    <HeaderContent>
+        <MudTh>Tytuł</MudTh>
+        <MudTh>Kategoria</MudTh>
+        <MudTh>Data dokumentu</MudTh>
+        <MudTh>Rozmiar</MudTh>
+        <MudTh>Tagi</MudTh>
+        <MudTh>Akcje</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tytuł">@context.Title</MudTd>
+        <MudTd DataLabel="Kategoria">@context.Category?.Name</MudTd>
+        <MudTd DataLabel="Data">@context.DocumentDate.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd DataLabel="Rozmiar">@FormatSize(context.FileSizeBytes)</MudTd>
+        <MudTd DataLabel="Tagi">
+            @foreach (var tag in context.Tags.Take(3))
+            {
+                <MudChip T="string" Size="Size.Small" Class="mr-1">@tag</MudChip>
+            }
+        </MudTd>
+        <MudTd>
+            <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
+                           Href="@($"/archive/download/{context.Id}")" />
+            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                           Href="@($"/archive/{context.Id}")" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Brak dokumentów</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<ArchiveDocument> _documents = [];
+    private List<ArchiveCategory> _categories = [];
+    private bool _loading = true;
+    private string? _search;
+    private int? _categoryId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db0 = await DbFactory.CreateDbContextAsync();
+        _categories = await db0.ArchiveCategories.Where(c => c.IsActive).ToListAsync();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        await using var Db = await DbFactory.CreateDbContextAsync();
+        var query = Db.ArchiveDocuments
+            .Include(d => d.Category)
+            .Where(d => !d.IsDeleted)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(_search))
+            query = query.Where(d => EF.Functions.ILike(d.Title, $"%{_search}%") ||
+                                     EF.Functions.ILike(d.Description ?? "", $"%{_search}%"));
+
+        if (_categoryId.HasValue)
+            query = query.Where(d => d.CategoryId == _categoryId.Value);
+
+        _documents = await query
+            .OrderByDescending(d => d.UploadedAt)
+            .Take(200)
+            .ToListAsync();
+        _loading = false;
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024} KB";
+        return $"{bytes / (1024 * 1024)} MB";
+    }
+}

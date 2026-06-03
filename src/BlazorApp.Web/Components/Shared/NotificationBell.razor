@@ -1,0 +1,44 @@
+@using BlazorApp.Application.Interfaces
+@using MudBlazor
+@inject INotificationService NotificationService
+@inject AuthenticationStateProvider AuthState
+
+<MudMenu Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit">
+    <ActivatorContent>
+        <MudBadge Content="@_unreadCount" Color="Color.Error" Overlap="true" Visible="@(_unreadCount > 0)">
+            <MudIconButton Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" />
+        </MudBadge>
+    </ActivatorContent>
+    <ChildContent>
+        <MudMenuItem Href="/notifications">Wszystkie powiadomienia</MudMenuItem>
+        <MudDivider />
+        @if (_unreadCount == 0)
+        {
+            <MudMenuItem Disabled>Brak nowych powiadomień</MudMenuItem>
+        }
+        else
+        {
+            <MudMenuItem OnClick="MarkAllRead">Oznacz wszystkie jako przeczytane</MudMenuItem>
+        }
+    </ChildContent>
+</MudMenu>
+
+@code {
+    private int _unreadCount;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (_userId is not null)
+            _unreadCount = await NotificationService.GetUnreadCountAsync(_userId);
+    }
+
+    private async Task MarkAllRead()
+    {
+        if (_userId is null) return;
+        await NotificationService.MarkAllAsReadAsync(_userId);
+        _unreadCount = 0;
+    }
+}

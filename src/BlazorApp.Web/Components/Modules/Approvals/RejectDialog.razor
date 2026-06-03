@@ -1,0 +1,67 @@
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using MudBlazor
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Odrzuć formularz</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudSelect @bind-Value="_categoryId" Label="Kategoria odrzucenia" T="int?" Clearable="true">
+            @foreach (var cat in _categories)
+            {
+                <MudSelectItem Value="@((int?)cat.Id)">@cat.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_reason" Label="Powód odrzucenia" Lines="3" Class="mt-3" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Outlined">Anuluj</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="RejectAsync"
+                   Disabled="@string.IsNullOrWhiteSpace(_reason)">Odrzuć</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public Guid SubmissionId { get; set; }
+
+    private string? _reason;
+    private int? _categoryId;
+    private List<RejectionCategory> _categories = [];
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var submission = await db.FormSubmissions.FindAsync(SubmissionId);
+        if (submission is not null)
+            _categories = await db.RejectionCategories
+                .Where(c => c.FormDefinitionId == submission.FormDefinitionId && c.IsActive)
+                .ToListAsync();
+    }
+
+    private async Task RejectAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var submission = await db.FormSubmissions.FindAsync(SubmissionId);
+        if (submission is null) return;
+        submission.Status = SubmissionStatus.Rejected;
+        submission.ReviewedByUserId = _userId;
+        submission.ReviewedAt = DateTime.UtcNow;
+        submission.RejectionReason = _reason;
+        submission.RejectionCategoryId = _categoryId;
+        await db.SaveChangesAsync();
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

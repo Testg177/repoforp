@@ -1,0 +1,250 @@
+@page "/admin/users/new"
+@page "/admin/users/{Id}"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanManageUsers")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(IsNew ? "Nowy użytkownik" : "Edycja użytkownika")</PageTitle>
+
+<div style="max-width:680px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                       OnClick="@(() => Nav.NavigateTo("/admin/users"))" />
+        <div style="font-size:18px;font-weight:700;color:#e6edf3;">
+            @(IsNew ? "Nowy użytkownik" : $"Edycja: {_firstName} {_lastName}")
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else
+    {
+        <div class="dash-panel" style="padding:24px;margin-bottom:12px;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:16px;">Dane podstawowe</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                    <label class="sz-field-label">Imię *</label>
+                    <input @bind="_firstName" class="sz-field-input" placeholder="Jan" />
+                </div>
+                <div>
+                    <label class="sz-field-label">Nazwisko *</label>
+                    <input @bind="_lastName" class="sz-field-input" placeholder="Kowalski" />
+                </div>
+            </div>
+
+            <div style="margin-bottom:12px;">
+                <label class="sz-field-label">Adres e-mail *</label>
+                <input @bind="_email" type="email" class="sz-field-input" placeholder="jan.kowalski@firma.pl"
+                       disabled="@(!IsNew)" style="@(!IsNew ? "opacity:.6;cursor:not-allowed;" : "")" />
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                    <label class="sz-field-label">Dział</label>
+                    <input @bind="_department" class="sz-field-input" placeholder="IT" />
+                </div>
+                <div>
+                    <label class="sz-field-label">Stanowisko</label>
+                    <input @bind="_position" class="sz-field-input" placeholder="Specjalista" />
+                </div>
+            </div>
+
+            <div>
+                <label class="sz-field-label">Telefon (SMS) — format: +48XXXXXXXXX</label>
+                <input @bind="_phone" class="sz-field-input" placeholder="+48500000000" />
+            </div>
+        </div>
+
+        @if (IsNew)
+        {
+            <div class="dash-panel" style="padding:24px;margin-bottom:12px;">
+                <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:12px;">Hasło tymczasowe</div>
+                <div>
+                    <label class="sz-field-label">Hasło *</label>
+                    <input @bind="_password" type="password" class="sz-field-input" placeholder="Min. 8 znaków, 1 znak specjalny" />
+                </div>
+                <div style="font-size:11px;color:#484f58;margin-top:6px;">Użytkownik zmieni hasło przy pierwszym logowaniu.</div>
+            </div>
+        }
+
+        <div class="dash-panel" style="padding:24px;margin-bottom:12px;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:14px;">Role</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                @foreach (var role in _allRoles)
+                {
+                    var r = role;
+                    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid @(_selectedRoles.Contains(r) ? "rgba(88,166,255,0.4)" : "rgba(240,246,252,0.08)");background:@(_selectedRoles.Contains(r) ? "rgba(88,166,255,0.08)" : "transparent");cursor:pointer;transition:all .15s;">
+                        <input type="checkbox" checked="@_selectedRoles.Contains(r)"
+                               @onchange="@(e => ToggleRole(r, (bool)(e.Value ?? false)))"
+                               style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;" />
+                        <span style="font-size:13px;color:#e6edf3;">@r</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="dash-panel" style="padding:24px;margin-bottom:16px;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:14px;">Ustawienia konta</div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                @foreach (var (label, value, setter) in new (string, bool, Action<bool>)[]
+                {
+                    ("Konto aktywne",            _isActive,    v => _isActive    = v),
+                    ("Powiadomienia e-mail",      _emailNotif,  v => _emailNotif  = v),
+                    ("Powiadomienia SMS",         _smsNotif,    v => _smsNotif    = v),
+                    ("Wymuś zmianę hasła",        _forcePass,   v => _forcePass   = v),
+                })
+                {
+                    var lbl = label; var val = value; var set = setter;
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                        <div style="position:relative;width:36px;height:20px;flex-shrink:0;">
+                            <input type="checkbox" checked="@val"
+                                   @onchange="@(e => { set((bool)(e.Value ?? false)); StateHasChanged(); })"
+                                   style="opacity:0;width:0;height:0;position:absolute;" />
+                            <div style="position:absolute;top:0;left:0;right:0;bottom:0;border-radius:20px;background:@(val ? "#58a6ff" : "rgba(240,246,252,0.1)");transition:.2s;cursor:pointer;" @onclick="@(() => { set(!val); StateHasChanged(); })">
+                                <div style="position:absolute;height:16px;width:16px;left:@(val ? "18px" : "2px");bottom:2px;border-radius:50%;background:white;transition:.2s;"></div>
+                            </div>
+                        </div>
+                        <span style="font-size:13px;color:#e6edf3;">@lbl</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div style="padding:12px 16px;background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.3);border-radius:8px;color:#f85149;font-size:13px;margin-bottom:16px;">
+                @_error
+            </div>
+        }
+
+        <div style="display:flex;gap:12px;">
+            <button @onclick="@(() => Nav.NavigateTo("/admin/users"))"
+                    style="padding:10px 20px;border-radius:8px;border:1px solid rgba(240,246,252,0.15);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer;">
+                Anuluj
+            </button>
+            <button @onclick="Save" disabled="@_saving"
+                    style="padding:10px 24px;border-radius:8px;border:none;background:#58a6ff;color:#0d1117;font-size:13px;font-weight:600;cursor:pointer;opacity:@(_saving ? "0.6" : "1");">
+                @(_saving ? "Zapisywanie..." : "Zapisz użytkownika")
+            </button>
+        </div>
+    }
+</div>
+
+<style>
+    .sz-field-label { display:block; font-size:11px; font-weight:500; color:#7d8590; margin-bottom:6px; }
+    .sz-field-input { width:100%; padding:10px 12px; background:rgba(240,246,252,0.04); border:1px solid rgba(240,246,252,0.12); border-radius:8px; color:#e6edf3; font-size:13px; outline:none; transition:border-color .15s; box-sizing:border-box; }
+    .sz-field-input:focus { border-color:rgba(88,166,255,0.5); background:rgba(240,246,252,0.06); }
+    .sz-field-input::placeholder { color:#484f58; }
+</style>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    private bool IsNew => Id is null;
+    private ApplicationUser? _user;
+    private string _firstName = "", _lastName = "", _email = "", _department = "",
+                   _position = "", _phone = "", _password = "", _error = "";
+    private bool _isActive = true, _emailNotif = true, _smsNotif, _forcePass = true;
+    private bool _loading = true, _saving;
+    private List<string> _allRoles = [];
+    private HashSet<string> _selectedRoles = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _allRoles = await db.Roles.Select(r => r.Name!).OrderBy(r => r).ToListAsync();
+
+        if (!IsNew)
+        {
+            _user = await db.Users.FirstOrDefaultAsync(u => u.Id == Id);
+            if (_user is not null)
+            {
+                _firstName  = _user.FirstName;
+                _lastName   = _user.LastName;
+                _email      = _user.Email ?? "";
+                _department = _user.Department ?? "";
+                _position   = _user.Position ?? "";
+                _phone      = _user.PhoneNumberForSms ?? "";
+                _isActive   = _user.IsActive;
+                _emailNotif = _user.ReceiveEmailNotifications;
+                _smsNotif   = _user.ReceiveSmsNotifications;
+                _forcePass  = _user.ForcePasswordChange;
+
+                var userRoleMappings = await db.UserRoles
+                    .Where(ur => ur.UserId == Id)
+                    .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
+                    .ToListAsync();
+                _selectedRoles = [.. userRoleMappings];
+            }
+        }
+        _loading = false;
+    }
+
+    private void ToggleRole(string role, bool value)
+    {
+        if (value) _selectedRoles.Add(role);
+        else _selectedRoles.Remove(role);
+    }
+
+    private async Task Save()
+    {
+        _error = "";
+        if (string.IsNullOrWhiteSpace(_firstName) || string.IsNullOrWhiteSpace(_lastName) || string.IsNullOrWhiteSpace(_email))
+        {
+            _error = "Imię, nazwisko i e-mail są wymagane.";
+            return;
+        }
+
+        _saving = true;
+
+        if (IsNew)
+        {
+            if (string.IsNullOrWhiteSpace(_password)) { _error = "Hasło jest wymagane."; _saving = false; return; }
+            var user = new ApplicationUser
+            {
+                UserName = _email, Email = _email,
+                FirstName = _firstName, LastName = _lastName,
+                Department = _department, Position = _position,
+                PhoneNumberForSms = _phone.Length > 0 ? _phone : null,
+                IsActive = _isActive, ReceiveEmailNotifications = _emailNotif,
+                ReceiveSmsNotifications = _smsNotif, ForcePasswordChange = _forcePass,
+                EmailConfirmed = true, CreatedAt = DateTime.UtcNow
+            };
+            var result = await UserManager.CreateAsync(user, _password);
+            if (!result.Succeeded)
+            {
+                _error = string.Join(" | ", result.Errors.Select(e => e.Description));
+                _saving = false; return;
+            }
+            if (_selectedRoles.Count > 0)
+                await UserManager.AddToRolesAsync(user, _selectedRoles);
+        }
+        else if (_user is not null)
+        {
+            _user.FirstName = _firstName; _user.LastName = _lastName;
+            _user.Department = _department; _user.Position = _position;
+            _user.PhoneNumberForSms = _phone.Length > 0 ? _phone : null;
+            _user.IsActive = _isActive; _user.ReceiveEmailNotifications = _emailNotif;
+            _user.ReceiveSmsNotifications = _smsNotif; _user.ForcePasswordChange = _forcePass;
+            await UserManager.UpdateAsync(_user);
+
+            var currentRoles = await UserManager.GetRolesAsync(_user);
+            if (currentRoles.Any()) await UserManager.RemoveFromRolesAsync(_user, currentRoles);
+            if (_selectedRoles.Count > 0) await UserManager.AddToRolesAsync(_user, _selectedRoles);
+        }
+
+        Snackbar.Add(IsNew ? "Użytkownik utworzony" : "Zmiany zapisane", Severity.Success);
+        Nav.NavigateTo("/admin/users");
+    }
+}

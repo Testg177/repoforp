@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BlazorApp.Application/BlazorApp.Application.csproj" />
+    <Project Path="src/BlazorApp.Domain/BlazorApp.Domain.csproj" />
+    <Project Path="src/BlazorApp.Infrastructure/BlazorApp.Infrastructure.csproj" />
+    <Project Path="src/BlazorApp.Web/BlazorApp.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BlazorApp.IntegrationTests/BlazorApp.IntegrationTests.csproj" />
+    <Project Path="tests/BlazorApp.UnitTests/BlazorApp.UnitTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,155 @@
+@page "/Account/Login"
+@layout BlazorApp.Web.Components.Layout.AuthLayout
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp.Domain.Entities
+@using MudBlazor
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Logowanie — System Zarządzania</PageTitle>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1565C0 0%,#0D47A1 50%,#01579B 100%);">
+    <MudPaper Elevation="8" Style="width:100%;max-width:420px;padding:40px 36px 32px;border-radius:16px;">
+
+        <div style="text-align:center;margin-bottom:32px;">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Style="font-size:3rem;color:#1565C0;" />
+            <MudText Typo="Typo.h5" Style="font-weight:700;margin-top:8px;color:#1A1A2E;">System Zarządzania</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Zaloguj się do swojego konta</MudText>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4" Dense="true">@errorMessage</MudAlert>
+        }
+
+        <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+            <DataAnnotationsValidator />
+
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-size:0.85rem;font-weight:500;color:#555;margin-bottom:4px;">Adres e-mail</label>
+                <InputText @bind-Value="Input.Email" id="Input.Email"
+                           autocomplete="username webauthn"
+                           placeholder="jan.kowalski@firma.pl"
+                           style="width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:0.95rem;outline:none;box-sizing:border-box;transition:border-color .2s;" />
+                <ValidationMessage For="() => Input.Email" style="color:#d32f2f;font-size:0.78rem;margin-top:2px;display:block;" />
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <label style="display:block;font-size:0.85rem;font-weight:500;color:#555;margin-bottom:4px;">Hasło</label>
+                <InputText type="password" @bind-Value="Input.Password" id="Input.Password"
+                           autocomplete="current-password"
+                           placeholder="••••••••"
+                           style="width:100%;padding:12px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:0.95rem;outline:none;box-sizing:border-box;transition:border-color .2s;" />
+                <ValidationMessage For="() => Input.Password" style="color:#d32f2f;font-size:0.78rem;margin-top:2px;display:block;" />
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#555;cursor:pointer;">
+                    <InputCheckbox @bind-Value="Input.RememberMe" />
+                    Zapamiętaj mnie
+                </label>
+                <a href="Account/ForgotPassword" style="font-size:0.85rem;color:#1565C0;text-decoration:none;">Zapomniałem hasła</a>
+            </div>
+
+            <button type="submit"
+                    style="width:100%;padding:13px;background:#1565C0;color:white;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;letter-spacing:0.3px;transition:background .2s;">
+                Zaloguj się
+            </button>
+        </EditForm>
+
+        <MudDivider Class="my-4" />
+        <div style="text-align:center;">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Problemy z logowaniem? Skontaktuj się z administratorem.
+            </MudText>
+        </div>
+    </MudPaper>
+</div>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    public async Task LoginUser()
+    {
+        if (!string.IsNullOrEmpty(Input.Passkey?.Error))
+        {
+            errorMessage = $"Błąd: {Input.Passkey.Error}";
+            return;
+        }
+
+        SignInResult result;
+        if (!string.IsNullOrEmpty(Input.Passkey?.CredentialJson))
+        {
+            result = await SignInManager.PasskeySignInAsync(Input.Passkey.CredentialJson);
+        }
+        else
+        {
+            if (!editContext.Validate()) return;
+            result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: true);
+        }
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("User logged in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo("Account/LoginWith2fa",
+                new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = Input.RememberMe });
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User account locked out.");
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            errorMessage = "Nieprawidłowy adres e-mail lub hasło.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "E-mail jest wymagany")]
+        [EmailAddress(ErrorMessage = "Nieprawidłowy format e-mail")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Hasło jest wymagane")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [Display(Name = "Zapamiętaj mnie")]
+        public bool RememberMe { get; set; }
+
+        public PasskeyInputModel? Passkey { get; set; }
+    }
+}

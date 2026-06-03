@@ -1,0 +1,28 @@
+@inject NavigationManager Nav
+@using MudBlazor
+
+<a href="@Href" class="sz-nav-item @(IsActive ? "active" : "")" title="@Title">
+    <MudIcon Icon="@Icon" Size="Size.Small" />
+    @if (Badge.HasValue && Badge.Value > 0)
+    {
+        <span class="sz-badge">@(Badge.Value > 99 ? "99+" : Badge.Value.ToString())</span>
+    }
+</a>
+
+@code {
+    [Parameter] public string Href { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public int? Badge { get; set; }
+    [Parameter] public bool Exact { get; set; }
+
+    private bool IsActive
+    {
+        get
+        {
+            var rel = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+            var href = Href.TrimStart('/').TrimEnd('/');
+            return Exact ? rel == href : (href == "" ? rel == "" : rel.StartsWith(href));
+        }
+    }
+}

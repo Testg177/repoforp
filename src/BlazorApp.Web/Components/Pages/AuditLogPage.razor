@@ -1,0 +1,108 @@
+@page "/audit"
+@using BlazorApp.Infrastructure.Data
+@using DomainAuditLog = BlazorApp.Domain.Entities.AuditLog
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanViewAudit")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Logi audytu</PageTitle>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:700;color:#e6edf3;">Logi audytu</div>
+</div>
+
+<div class="dash-panel" style="margin-bottom:16px;">
+    <div style="display:flex;gap:12px;padding:14px 18px;flex-wrap:wrap;">
+        <MudTextField @bind-Value="_search" @bind-Value:after="LoadData" Label="Szukaj akcji lub encji"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:240px;" />
+        <MudTextField @bind-Value="_userFilter" @bind-Value:after="LoadData" Label="Użytkownik"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:180px;" />
+        <MudSelect @bind-Value="_successFilter" @bind-Value:after="LoadData" Label="Status"
+                   T="string" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px;">
+            <MudSelectItem Value="@("true")">Sukces</MudSelectItem>
+            <MudSelectItem Value="@("false")">Błąd</MudSelectItem>
+        </MudSelect>
+    </div>
+</div>
+
+<div class="dash-panel">
+    @if (_loading)
+    {
+        <div style="padding:40px;text-align:center;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+        </div>
+    }
+    else if (_logs.Count == 0)
+    {
+        <div style="padding:40px;text-align:center;color:#484f58;font-size:13px;">Brak logów dla podanych kryteriów</div>
+    }
+    else
+    {
+        <table style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:1px solid rgba(240,246,252,0.08);">
+                    @foreach (var h in new[]{"Czas","Użytkownik","Akcja","Encja","Status"})
+                    {
+                        <th style="padding:10px 18px;text-align:left;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;">@h</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in _logs.Cast<DomainAuditLog>())
+                {
+                    <tr style="border-bottom:1px solid rgba(240,246,252,0.04);transition:background .1s;" class="audit-row">
+                        <td style="padding:10px 18px;font-size:12px;color:#7d8590;white-space:nowrap;font-variant-numeric:tabular-nums;">
+                            @log.Timestamp.ToString("dd.MM.yy HH:mm:ss")
+                        </td>
+                        <td style="padding:10px 18px;font-size:12px;color:#e6edf3;">@log.UserName</td>
+                        <td style="padding:10px 18px;font-size:12px;color:#e6edf3;font-weight:500;">@log.Action</td>
+                        <td style="padding:10px 18px;font-size:12px;color:#7d8590;">
+                            @log.EntityType @(log.EntityId is not null ? $"#{log.EntityId[..Math.Min(8,log.EntityId.Length)]}" : "")
+                        </td>
+                        <td style="padding:10px 18px;">
+                            @if (log.IsSuccess)
+                            {
+                                <span class="sz-badge-pill badge-approved">OK</span>
+                            }
+                            else
+                            {
+                                <span class="sz-badge-pill badge-rejected">Błąd</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div style="padding:12px 18px;font-size:11px;color:#484f58;border-top:1px solid rgba(240,246,252,0.06);">
+            Wyświetlono @_logs.Count rekordów (max 200)
+        </div>
+    }
+</div>
+
+@code {
+    private List<DomainAuditLog> _logs = [];
+    private bool _loading = true;
+    private string? _search, _userFilter, _successFilter;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var q = db.AuditLogs.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(_search))
+            q = q.Where(l => l.Action.Contains(_search) || l.EntityType.Contains(_search));
+        if (!string.IsNullOrWhiteSpace(_userFilter))
+            q = q.Where(l => l.UserName.Contains(_userFilter));
+        if (_successFilter == "true")  q = q.Where(l => l.IsSuccess);
+        if (_successFilter == "false") q = q.Where(l => !l.IsSuccess);
+
+        _logs = await q.OrderByDescending(l => l.Timestamp).Take(200).ToListAsync();
+        _loading = false;
+    }
+}

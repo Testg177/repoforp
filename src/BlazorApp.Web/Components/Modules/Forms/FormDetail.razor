@@ -1,0 +1,177 @@
+@page "/forms/{Id:guid}"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanViewForms")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Szczegóły zgłoszenia</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_submission is null)
+{
+    <div style="text-align:center;padding:48px;color:#484f58;">Zgłoszenie nie istnieje</div>
+}
+else
+{
+    <div style="max-width:760px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                           OnClick="@(() => Nav.NavigateTo("/forms"))" />
+            <div style="flex:1;">
+                <div style="font-size:18px;font-weight:700;color:#e6edf3;">@_submission.FormDefinition?.Title</div>
+                <div style="font-size:12px;color:#7d8590;margin-top:2px;">
+                    Złożono @_submission.SubmittedAt.ToString("dd.MM.yyyy HH:mm")
+                    · Termin @_submission.DueDate.ToString("dd.MM.yyyy")
+                </div>
+            </div>
+            <span class="sz-badge-pill badge-@_submission.Status.ToString().ToLower()">
+                @GetStatusLabel(_submission.Status)
+            </span>
+        </div>
+
+        <div class="dash-panel" style="padding:20px;margin-bottom:12px;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:14px;">Szczegóły</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div>
+                    <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Formularz</div>
+                    <div style="font-size:13px;color:#e6edf3;">@_submission.FormDefinition?.Title</div>
+                </div>
+                <div>
+                    <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Złożył</div>
+                    <div style="font-size:13px;color:#e6edf3;">@_submission.SubmittedByUserId</div>
+                </div>
+                <div>
+                    <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Status</div>
+                    <span class="sz-badge-pill badge-@_submission.Status.ToString().ToLower()">@GetStatusLabel(_submission.Status)</span>
+                </div>
+                <div>
+                    <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Termin</div>
+                    <div style="font-size:13px;color:@(_submission.IsLate ? "#f85149" : "#e6edf3");">
+                        @_submission.DueDate.ToString("dd.MM.yyyy")
+                        @if (_submission.IsLate) { <span> ⚠ spóźnione</span> }
+                    </div>
+                </div>
+                @if (_submission.ReviewedByUserId is not null)
+                {
+                    <div>
+                        <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Zatwierdził</div>
+                        <div style="font-size:13px;color:#e6edf3;">@_submission.ReviewedByUserId</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px;color:#484f58;margin-bottom:3px;">Data decyzji</div>
+                        <div style="font-size:13px;color:#e6edf3;">@_submission.ReviewedAt?.ToString("dd.MM.yyyy HH:mm")</div>
+                    </div>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(_submission.RejectionReason))
+            {
+                <div style="margin-top:14px;padding:12px;background:rgba(248,81,73,0.08);border-radius:8px;border:1px solid rgba(248,81,73,0.2);">
+                    <div style="font-size:10px;color:#f85149;font-weight:600;margin-bottom:4px;">POWÓD ODRZUCENIA</div>
+                    <div style="font-size:13px;color:#e6edf3;">@_submission.RejectionReason</div>
+                </div>
+            }
+        </div>
+
+        @if (_submission.FieldValues.TryGetValue("notes", out var notes))
+        {
+            <div class="dash-panel" style="padding:20px;margin-bottom:12px;">
+                <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:10px;">Uwagi</div>
+                <div style="font-size:13px;color:#e6edf3;line-height:1.6;">@notes.GetString()</div>
+            </div>
+        }
+
+        @if (_submission.Comments.Count > 0)
+        {
+            <div class="dash-panel" style="padding:20px;margin-bottom:12px;">
+                <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:14px;">Komentarze</div>
+                @foreach (var c in _submission.Comments.OrderBy(x => x.CreatedAt))
+                {
+                    <div style="padding:10px 0;border-bottom:1px solid rgba(240,246,252,0.06);">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                            <span style="font-size:12px;color:#58a6ff;font-weight:500;">@c.UserId</span>
+                            <span style="font-size:11px;color:#484f58;">@c.CreatedAt.ToString("dd.MM.yyyy HH:mm")</span>
+                        </div>
+                        <div style="font-size:13px;color:#e6edf3;">@c.Content</div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_submission.Status == SubmissionStatus.Draft && _isOwner)
+        {
+            <div style="display:flex;gap:12px;margin-top:8px;">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitForReview">
+                    Złóż do zatwierdzenia
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="Delete">Usuń szkic</MudButton>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private FormSubmission? _submission;
+    private bool _loading = true, _isOwner;
+    private string? _userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _submission = await db.FormSubmissions
+            .Include(s => s.FormDefinition)
+            .Include(s => s.Comments)
+            .FirstOrDefaultAsync(s => s.Id == Id);
+
+        _isOwner = _submission?.SubmittedByUserId == _userId;
+        _loading = false;
+    }
+
+    private async Task SubmitForReview()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var s = await db.FormSubmissions.FindAsync(Id);
+        if (s is null) return;
+        s.Status = SubmissionStatus.Submitted;
+        await db.SaveChangesAsync();
+        Snackbar.Add("Zgłoszenie złożone do zatwierdzenia", Severity.Success);
+        Nav.NavigateTo("/forms");
+    }
+
+    private async Task Delete()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var s = await db.FormSubmissions.FindAsync(Id);
+        if (s is null) return;
+        db.FormSubmissions.Remove(s);
+        await db.SaveChangesAsync();
+        Snackbar.Add("Szkic usunięty", Severity.Info);
+        Nav.NavigateTo("/forms");
+    }
+
+    private static string GetStatusLabel(SubmissionStatus s) => s switch
+    {
+        SubmissionStatus.Draft           => "Szkic",
+        SubmissionStatus.Submitted       => "Złożony",
+        SubmissionStatus.InReview        => "W przeglądzie",
+        SubmissionStatus.Approved        => "Zatwierdzone",
+        SubmissionStatus.Rejected        => "Odrzucony",
+        SubmissionStatus.RequiresChanges => "Do poprawki",
+        _ => s.ToString()
+    };
+}

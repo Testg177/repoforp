@@ -1,0 +1,163 @@
+@page "/"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@using MudBlazor
+@attribute [Authorize]
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Dashboard — System Zarządzania</PageTitle>
+
+<div class="dash-stats">
+    <StatCard Label="DO WYPEŁNIENIA"    Value="@_draftCount"    Color="blue"
+              Delta="@_draftDelta"    DeltaLabel="od wczoraj" />
+    <StatCard Label="DO ZATWIERDZENIA" Value="@_pendingCount"  Color="yellow"
+              Delta="@_pendingDelta"  DeltaLabel="od wczoraj" />
+    <StatCard Label="PRZETERMINOWANE"  Value="@_overdueCount"  Color="red"
+              Delta="@_overdueDelta"  DeltaLabel="bez zmian" />
+    <StatCard Label="ZATWIERDZONE DZIŚ" Value="@_approvedToday" Color="green"
+              Delta="@_approvedDelta" DeltaLabel="od wczoraj" />
+</div>
+
+<div class="dash-panels">
+    <!-- Aktywność formularzy -->
+    <div class="dash-panel">
+        <div class="dash-panel-header">
+            <span class="dash-panel-title">Aktywność formularzy</span>
+            <a href="/forms" class="dash-panel-link">
+                wszystkie
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </a>
+        </div>
+        @if (_recentForms.Count == 0)
+        {
+            <div style="padding:32px 18px;text-align:center;color:#484f58;font-size:13px;">
+                Brak aktywności formularzy
+            </div>
+        }
+        else
+        {
+            @foreach (var s in _recentForms)
+            {
+                <div class="fa-row status-@s.Status.ToString().ToLower()">
+                    <div class="fa-info">
+                        <div class="fa-title">@(s.FormDefinition?.Title ?? "—")</div>
+                        <div class="fa-meta">@s.SubmittedByUserId · @(s.FormDefinition?.AssignedDepartments?.FirstOrDefault() ?? "")</div>
+                    </div>
+                    <div class="fa-right">
+                        <span class="sz-badge-pill badge-@s.Status.ToString().ToLower()">@GetStatusLabel(s.Status)</span>
+                        <span class="fa-date @(s.IsLate ? "overdue" : "")">@FormatDate(s.SubmittedAt)</span>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Powiadomienia -->
+    <div class="dash-panel">
+        <div class="dash-panel-header">
+            <span class="dash-panel-title">Powiadomienia</span>
+            <a href="/notifications" class="dash-panel-link">wszystkie</a>
+        </div>
+        @if (_recentNotifications.Count == 0)
+        {
+            <div style="padding:32px 18px;text-align:center;color:#484f58;font-size:13px;">
+                Brak nowych powiadomień
+            </div>
+        }
+        else
+        {
+            @foreach (var n in _recentNotifications)
+            {
+                <div class="notif-row">
+                    <div class="notif-icon @GetNotifColor(n.Type)"></div>
+                    <div class="notif-text">
+                        <div class="notif-title">@n.Title</div>
+                        <div class="notif-time">@FormatAgo(n.CreatedAt)</div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private int _draftCount, _pendingCount, _overdueCount, _approvedToday;
+    private int _draftDelta, _pendingDelta, _overdueDelta, _approvedDelta;
+    private List<FormSubmission> _recentForms = [];
+    private List<Notification> _recentNotifications = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var Db = await DbFactory.CreateDbContextAsync();
+        var today = DateTime.UtcNow.Date;
+        var yesterday = today.AddDays(-1);
+        var monthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        _draftCount    = await Db.FormSubmissions.CountAsync(s => s.Status == SubmissionStatus.Draft);
+        _pendingCount  = await Db.FormSubmissions.CountAsync(s => s.Status == SubmissionStatus.Submitted || s.Status == SubmissionStatus.InReview);
+        _overdueCount  = await Db.FormSubmissions.CountAsync(s => s.IsLate && s.Status == SubmissionStatus.Draft);
+        _approvedToday = await Db.FormSubmissions.CountAsync(s => s.Status == SubmissionStatus.Approved && s.ReviewedAt >= today);
+
+        var draftYesterday    = await Db.FormSubmissions.CountAsync(s => s.Status == SubmissionStatus.Draft && s.SubmittedAt.Date == yesterday);
+        var pendingYesterday  = await Db.FormSubmissions.CountAsync(s => (s.Status == SubmissionStatus.Submitted || s.Status == SubmissionStatus.InReview) && s.SubmittedAt.Date == yesterday);
+        var approvedYesterday = await Db.FormSubmissions.CountAsync(s => s.Status == SubmissionStatus.Approved && s.ReviewedAt >= yesterday && s.ReviewedAt < today);
+
+        _draftDelta    = _draftCount - draftYesterday;
+        _pendingDelta  = _pendingCount - pendingYesterday;
+        _overdueDelta  = 0;
+        _approvedDelta = _approvedToday - approvedYesterday;
+
+        _recentForms = await Db.FormSubmissions
+            .Include(s => s.FormDefinition)
+            .OrderByDescending(s => s.SubmittedAt)
+            .Take(5)
+            .ToListAsync();
+
+        _recentNotifications = await Db.Notifications
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(5)
+            .ToListAsync();
+    }
+
+    private static string GetStatusLabel(SubmissionStatus s) => s switch
+    {
+        SubmissionStatus.Draft            => "Szkic",
+        SubmissionStatus.Submitted        => "Złożony",
+        SubmissionStatus.InReview         => "W przeglądzie",
+        SubmissionStatus.Approved         => "Zatwierdzone",
+        SubmissionStatus.Rejected         => "Odrzucony",
+        SubmissionStatus.RequiresChanges  => "Do poprawki",
+        _ => s.ToString()
+    };
+
+    private static string GetNotifColor(NotificationType t) => t switch
+    {
+        NotificationType.FormApproved              => "green",
+        NotificationType.FormSubmittedForApproval  => "blue",
+        NotificationType.FormRejected              => "red",
+        NotificationType.FormDeadlineReminder      => "orange",
+        _ => "blue"
+    };
+
+    private static string FormatDate(DateTime dt)
+    {
+        var today = DateTime.UtcNow.Date;
+        if (dt.Date == today) return $"Dziś {dt:HH:mm}";
+        if (dt.Date == today.AddDays(-1)) return "Wczoraj";
+        return dt.ToString("yyyy-MM-dd");
+    }
+
+    private static string FormatAgo(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalMinutes < 1)  return "przed chwilą";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes} min temu";
+        if (diff.TotalHours   < 24) return $"{(int)diff.TotalHours} godz. temu";
+        return $"{(int)diff.TotalDays} dni temu";
+    }
+}

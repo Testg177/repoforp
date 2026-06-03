@@ -1,0 +1,134 @@
+@page "/admin/roles"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize(Policy = "CanManageUsers")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Nav
+
+<PageTitle>Role</PageTitle>
+
+<AdminTabs />
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        @foreach (var role in _roles)
+        {
+            var roleName = role.Name!;
+            <div class="dash-panel" style="padding:20px;">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px;">
+                    <div>
+                        <div style="font-size:15px;font-weight:700;color:#e6edf3;">@roleName</div>
+                        <div style="font-size:11px;color:#484f58;margin-top:3px;">
+                            @(_userCounts.TryGetValue(roleName, out var c) ? c : 0) użytkowników
+                        </div>
+                    </div>
+                    <span class="sz-badge-pill" style="background:rgba(63,185,80,0.12);color:#3fb950;white-space:nowrap;">Aktywna</span>
+                </div>
+
+                <div style="font-size:12px;color:#7d8590;line-height:1.6;margin-bottom:16px;">
+                    @GetRoleDescription(roleName)
+                </div>
+
+                <!-- permissions mini-preview -->
+                @if (_permissions.TryGetValue(roleName, out var perms) && perms.Count > 0)
+                {
+                    <div style="margin-bottom:14px;padding:10px 12px;background:rgba(240,246,252,0.03);border-radius:8px;border:1px solid rgba(240,246,252,0.06);">
+                        <div style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#484f58;margin-bottom:8px;">Uprawnienia modułów</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                            @foreach (var p in perms.Where(p => p.CanView))
+                            {
+                                <span style="padding:2px 7px;border-radius:10px;font-size:10px;background:rgba(88,166,255,0.1);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);">
+                                    @GetModuleLabel(p.Module)
+                                </span>
+                            }
+                            @if (!perms.Any(p => p.CanView))
+                            {
+                                <span style="font-size:11px;color:#484f58;">Brak przypisanych uprawnień modułów</span>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="margin-bottom:14px;padding:10px 12px;background:rgba(240,246,252,0.03);border-radius:8px;border:1px solid rgba(240,246,252,0.06);">
+                        <div style="font-size:11px;color:#484f58;">Brak skonfigurowanych uprawnień modułów</div>
+                    </div>
+                }
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <a href="/admin/users"
+                       style="padding:6px 12px;border-radius:6px;font-size:12px;color:#7d8590;border:1px solid rgba(240,246,252,0.1);text-decoration:none;">
+                        👤 Użytkownicy
+                    </a>
+                    <button @onclick="@(() => Nav.NavigateTo($"/admin/permissions?role={Uri.EscapeDataString(roleName)}"))"
+                            style="padding:6px 12px;border-radius:6px;font-size:12px;color:#58a6ff;border:1px solid rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);cursor:pointer;">
+                        🔑 Edytuj uprawnienia
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<IdentityRole> _roles = [];
+    private Dictionary<string, int> _userCounts = new();
+    private Dictionary<string, List<BlazorApp.Domain.Entities.ModulePermission>> _permissions = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _roles = await db.Roles.OrderBy(r => r.Name).ToListAsync();
+
+        var allPerms = await db.ModulePermissions
+            .Where(p => p.RoleId != null)
+            .ToListAsync();
+
+        foreach (var role in _roles)
+        {
+            var users = await UserManager.GetUsersInRoleAsync(role.Name!);
+            _userCounts[role.Name!] = users.Count;
+
+            _permissions[role.Name!] = allPerms
+                .Where(p => p.RoleId == role.Id)
+                .ToList();
+        }
+        _loading = false;
+    }
+
+    private static string GetRoleDescription(string role) => role switch
+    {
+        "SuperAdmin"  => "Pełny dostęp do wszystkich funkcji systemu. Zarządzanie konfiguracją i uprawnieniami.",
+        "Admin"       => "Zarządzanie użytkownikami, formularzami i archiwum. Zatwierdzanie zgłoszeń.",
+        "Manager"     => "Przeglądanie i zatwierdzanie zgłoszeń podległych pracowników. Dostęp do raportów.",
+        "Supervisor"  => "Nadzór nad formularzami działu. Możliwość wglądu i komentowania zgłoszeń.",
+        "Employee"    => "Składanie i przeglądanie własnych formularzy. Podstawowy dostęp do systemu.",
+        "Auditor"     => "Tylko do odczytu. Dostęp do logów audytu, raportów i historii zmian.",
+        "Viewer"      => "Przeglądanie zatwierdzonej dokumentacji bez możliwości tworzenia ani edycji.",
+        _ => "Rola użytkownika systemu."
+    };
+
+    private static string GetModuleLabel(BlazorApp.Domain.Enums.ModuleType m) => m switch
+    {
+        BlazorApp.Domain.Enums.ModuleType.Dashboard      => "Dashboard",
+        BlazorApp.Domain.Enums.ModuleType.Forms          => "Formularze",
+        BlazorApp.Domain.Enums.ModuleType.Archive        => "Archiwum",
+        BlazorApp.Domain.Enums.ModuleType.Reports        => "Raporty",
+        BlazorApp.Domain.Enums.ModuleType.UserManagement => "Użytkownicy",
+        BlazorApp.Domain.Enums.ModuleType.SystemSettings => "Ustawienia",
+        BlazorApp.Domain.Enums.ModuleType.Notifications  => "Powiadomienia",
+        BlazorApp.Domain.Enums.ModuleType.Audit          => "Audyt",
+        _ => m.ToString()
+    };
+}

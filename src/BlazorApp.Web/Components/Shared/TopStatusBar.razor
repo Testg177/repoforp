@@ -1,0 +1,57 @@
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@implements IDisposable
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<div class="sz-status-bar">
+    <div class="sz-status-item">
+        <span class="sz-dot green"></span>
+        <span>System OK</span>
+    </div>
+    <div class="sz-status-item">
+        <span class="sz-dot yellow"></span>
+        <span>Do zatwierdzenia: <strong style="color:#d29922">@_pendingCount</strong></span>
+    </div>
+    <div class="sz-status-item">
+        <span class="sz-dot red"></span>
+        <span>Przeterminowane: <strong style="color:#f85149">@_overdueCount</strong></span>
+    </div>
+    <div class="sz-status-item">
+        <span class="sz-dot orange"></span>
+        <span>Kolejka email: <strong style="color:#e3b341">@_emailQueueCount</strong></span>
+    </div>
+    <div class="sz-status-item sz-clock">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+        </svg>
+        @_time
+    </div>
+</div>
+
+@code {
+    private int _pendingCount, _overdueCount, _emailQueueCount;
+    private string _time = "";
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _time = DateTime.Now.ToString("HH:mm:ss");
+        _timer = new Timer(_ =>
+        {
+            _time = DateTime.Now.ToString("HH:mm:ss");
+            InvokeAsync(StateHasChanged);
+        }, null, 1000, 1000);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _pendingCount = await db.FormSubmissions
+            .CountAsync(s => s.Status == SubmissionStatus.Submitted || s.Status == SubmissionStatus.InReview);
+        _overdueCount = await db.FormSubmissions
+            .CountAsync(s => s.IsLate && s.Status == SubmissionStatus.Draft);
+        _emailQueueCount = await db.EmailQueue
+            .CountAsync(e => e.Status == "Pending");
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}
