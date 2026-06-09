@@ -192,17 +192,19 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();
-
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-    await InitQuartzSchemaAsync(connectionString);
-    await DbSeeder.SeedAsync(scope.ServiceProvider);
 }
 else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+    await InitQuartzSchemaAsync(connectionString);
+    await DbSeeder.SeedAsync(scope.ServiceProvider);
 }
 
 app.UseSerilogRequestLogging();
