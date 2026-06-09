@@ -19,5 +19,5 @@ RUN dotnet publish "BlazorApp.Web.csproj" -c Release -o /app/publish /p:UseAppHo
 
 FROM base AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
+COPY --from=build /app/publish .
 ENTRYPOINT ["dotnet", "BlazorApp.Web.dll"]
