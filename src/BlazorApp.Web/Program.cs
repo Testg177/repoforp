@@ -19,6 +19,11 @@ using Quartz;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Default connection string is not configured.");
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+dataSourceBuilder.EnableDynamicJson();
+var dataSource = dataSourceBuilder.Build();
 
 // --- Serilog ---
 builder.Host.UseSerilog((ctx, lc) => lc
@@ -30,7 +35,7 @@ builder.Host.UseSerilog((ctx, lc) => lc
 Action<DbContextOptionsBuilder> dbOptions = options =>
 {
     options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
+        dataSource,
         npgsql =>
         {
             npgsql.MigrationsAssembly("BlazorApp.Infrastructure");
@@ -180,7 +185,7 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
-    await InitQuartzSchemaAsync(db);
+    await InitQuartzSchemaAsync(connectionString);
     await DbSeeder.SeedAsync(scope.ServiceProvider);
 }
 else
@@ -200,7 +205,7 @@ app.MapAdditionalIdentityEndpoints();
 
 app.Run();
 
-static async Task InitQuartzSchemaAsync(AppDbContext db)
+static async Task InitQuartzSchemaAsync(string connectionString)
 {
     const string sql = """
         CREATE TABLE IF NOT EXISTS qrtz_job_details (
@@ -329,7 +334,7 @@ static async Task InitQuartzSchemaAsync(AppDbContext db)
         ALTER TABLE qrtz_triggers ADD COLUMN IF NOT EXISTS misfire_orig_fire_time BIGINT NULL;
         """;
 
-    await using var conn = new NpgsqlConnection(db.Database.GetConnectionString());
+    await using var conn = new NpgsqlConnection(connectionString);
     await conn.OpenAsync();
     await using var cmd = conn.CreateCommand();
     cmd.CommandText = sql;

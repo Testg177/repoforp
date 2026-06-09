@@ -6,6 +6,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Text.Json
 @attribute [Authorize(Policy = "CanApproveForms")]
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ISnackbar Snackbar
@@ -95,6 +96,20 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         var item = await db.FormSubmissions.FindAsync(s.Id);
         if (item is null) return;
+        var definition = await db.FormDefinitions
+            .Include(f => f.Fields)
+            .FirstOrDefaultAsync(f => f.Id == item.FormDefinitionId);
+        var missingManagerFields = definition?.Fields.Any(field =>
+            IsManagerField(field) &&
+            field.IsRequired &&
+            !item.FieldValues.ContainsKey(field.FieldKey)) == true;
+
+        if (missingManagerFields)
+        {
+            Snackbar.Add("Najpierw otworz szczegoly i uzupelnij szare pola kierownika", Severity.Warning);
+            return;
+        }
+
         item.Status = SubmissionStatus.Approved;
         item.ReviewedByUserId = _reviewerId;
         item.ReviewedAt = DateTime.UtcNow;
@@ -117,4 +132,10 @@
         SubmissionStatus.InReview  => "W przeglądzie",
         _ => st.ToString()
     };
+
+    private static bool IsManagerField(FormField field) =>
+        field.ValidationRules is not null
+        && field.ValidationRules.TryGetValue("fillRole", out var role)
+        && role.ValueKind == JsonValueKind.String
+        && role.GetString() == "manager";
 }

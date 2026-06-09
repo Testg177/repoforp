@@ -6,24 +6,72 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject AuthenticationStateProvider AuthState
+@inject ISnackbar Snackbar
+
+<style>
+    .reject-dialog-shell { min-width:360px;max-width:420px;padding:4px 2px 0; }
+    .reject-dialog-header { display:flex;align-items:center;gap:10px;margin-bottom:2px; }
+    .reject-dialog-icon { width:34px;height:34px;border-radius:8px;background:rgba(248,81,73,0.12);color:#f85149;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px; }
+    .reject-dialog-title { color:#e6edf3;font-weight:700;font-size:18px;line-height:1.2; }
+    .reject-dialog-subtitle { color:#7d8590;font-size:12px;margin-top:4px;line-height:1.45; }
+    .reject-dialog-fields { display:grid;gap:16px;margin-top:18px; }
+    .reject-dialog-actions { display:flex;justify-content:flex-end;gap:10px;padding:16px 0 4px; }
+    .reject-field { display:grid;gap:6px; }
+    .reject-label { color:#7d8590;font-size:12px;line-height:1; }
+    .reject-select,
+    .reject-textarea { width:100%;box-sizing:border-box;border:1px solid rgba(139,148,158,0.55);border-radius:4px;background:#151b23;color:#e6edf3;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s; }
+    .reject-select { height:40px;padding:0 12px;cursor:pointer; }
+    .reject-textarea { min-height:96px;padding:12px;resize:vertical;line-height:1.45; }
+    .reject-select:focus,
+    .reject-textarea:focus { border-color:#58a6ff;box-shadow:0 0 0 1px rgba(88,166,255,0.35); }
+    .reject-textarea::placeholder { color:#7d8590; }
+    .reject-action-btn { height:36px;padding:0 18px;border-radius:4px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.2px;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s; }
+    .reject-cancel-btn { border:1px solid rgba(139,148,158,0.45);background:transparent;color:#e6edf3; }
+    .reject-cancel-btn:hover { border-color:rgba(230,237,243,0.65);background:rgba(230,237,243,0.04); }
+    .reject-submit-btn { border:1px solid rgba(248,81,73,0.5);background:#da3633;color:#fff; }
+    .reject-submit-btn:hover { background:#f85149;border-color:#f85149; }
+    .reject-submit-btn:disabled { opacity:.55;cursor:wait; }
+</style>
 
 <MudDialog>
     <TitleContent>
-        <MudText Typo="Typo.h6">Odrzuć formularz</MudText>
+        <div class="reject-dialog-header">
+            <div class="reject-dialog-icon">!</div>
+            <div>
+                <div class="reject-dialog-title">Odrzuc formularz</div>
+                <div class="reject-dialog-subtitle">Wybierz kategorie i wpisz powod, ktory pracownik zobaczy przy poprawie.</div>
+            </div>
+        </div>
     </TitleContent>
     <DialogContent>
-        <MudSelect @bind-Value="_categoryId" Label="Kategoria odrzucenia" T="int?" Clearable="true">
-            @foreach (var cat in _categories)
-            {
-                <MudSelectItem Value="@((int?)cat.Id)">@cat.Name</MudSelectItem>
-            }
-        </MudSelect>
-        <MudTextField @bind-Value="_reason" Label="Powód odrzucenia" Lines="3" Class="mt-3" Required="true" />
+        <div class="reject-dialog-shell">
+            <div class="reject-dialog-fields">
+                <label class="reject-field">
+                    <span class="reject-label">Kategoria odrzucenia</span>
+                    <select class="reject-select" @bind="_categoryCode">
+                        <option value="EMPLOYEE_ERROR">Blad pracownika</option>
+                        <option value="MACHINE_ERROR">Blad maszyny</option>
+                    </select>
+                </label>
+
+                <label class="reject-field">
+                    <span class="reject-label">Powod odrzucenia *</span>
+                    <textarea class="reject-textarea"
+                              autofocus
+                              placeholder="Np. brak podpisu, zla data albo niepelny opis prac"
+                              @bind="_reason"
+                              @bind:event="oninput"></textarea>
+                </label>
+            </div>
+        </div>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel" Variant="Variant.Outlined">Anuluj</MudButton>
-        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="RejectAsync"
-                   Disabled="@string.IsNullOrWhiteSpace(_reason)">Odrzuć</MudButton>
+        <div class="reject-dialog-actions">
+            <button type="button" class="reject-action-btn reject-cancel-btn" @onclick="Cancel">Anuluj</button>
+            <button type="button" class="reject-action-btn reject-submit-btn" disabled="@_saving" @onclick="RejectAsync">
+                @(_saving ? "Odrzucanie..." : "Odrzuc")
+            </button>
+        </div>
     </DialogActions>
 </MudDialog>
 
@@ -32,9 +80,9 @@
     [Parameter] public Guid SubmissionId { get; set; }
 
     private string? _reason;
-    private int? _categoryId;
-    private List<RejectionCategory> _categories = [];
+    private string _categoryCode = "EMPLOYEE_ERROR";
     private string? _userId;
+    private bool _saving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -43,24 +91,82 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
         var submission = await db.FormSubmissions.FindAsync(SubmissionId);
-        if (submission is not null)
-            _categories = await db.RejectionCategories
-                .Where(c => c.FormDefinitionId == submission.FormDefinitionId && c.IsActive)
-                .ToListAsync();
+        if (submission is null) return;
+
+        await EnsureCategoryAsync(db, submission.FormDefinitionId, "EMPLOYEE_ERROR", "Blad pracownika", "Formularz wymaga poprawy przez pracownika.");
+        await EnsureCategoryAsync(db, submission.FormDefinitionId, "MACHINE_ERROR", "Blad maszyny", "Formularz zostal odrzucony z powodu problemu z maszyna.");
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureCategoryAsync(AppDbContext db, int formDefinitionId, string code, string name, string description)
+    {
+        var category = await db.RejectionCategories
+            .FirstOrDefaultAsync(c => c.FormDefinitionId == formDefinitionId && c.Code == code);
+
+        if (category is null)
+        {
+            db.RejectionCategories.Add(new RejectionCategory
+            {
+                Code = code,
+                Name = name,
+                Description = description,
+                FormDefinitionId = formDefinitionId,
+                IsActive = true
+            });
+            return;
+        }
+
+        category.Name = name;
+        category.Description = description;
+        category.IsActive = true;
     }
 
     private async Task RejectAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var submission = await db.FormSubmissions.FindAsync(SubmissionId);
-        if (submission is null) return;
-        submission.Status = SubmissionStatus.Rejected;
-        submission.ReviewedByUserId = _userId;
-        submission.ReviewedAt = DateTime.UtcNow;
-        submission.RejectionReason = _reason;
-        submission.RejectionCategoryId = _categoryId;
-        await db.SaveChangesAsync();
-        MudDialog.Close(DialogResult.Ok(true));
+        if (_saving) return;
+
+        if (string.IsNullOrWhiteSpace(_reason))
+        {
+            Snackbar.Add("Wpisz powod odrzucenia", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var submission = await db.FormSubmissions.FindAsync(SubmissionId);
+            if (submission is null)
+            {
+                Snackbar.Add("Nie znaleziono formularza do odrzucenia", Severity.Error);
+                return;
+            }
+
+            await EnsureCategoryAsync(db, submission.FormDefinitionId, "EMPLOYEE_ERROR", "Blad pracownika", "Formularz wymaga poprawy przez pracownika.");
+            await EnsureCategoryAsync(db, submission.FormDefinitionId, "MACHINE_ERROR", "Blad maszyny", "Formularz zostal odrzucony z powodu problemu z maszyna.");
+            await db.SaveChangesAsync();
+
+            var category = await db.RejectionCategories
+                .FirstOrDefaultAsync(c => c.FormDefinitionId == submission.FormDefinitionId && c.Code == _categoryCode && c.IsActive);
+
+            submission.Status = SubmissionStatus.Rejected;
+            submission.ReviewedByUserId = _userId;
+            submission.ReviewedAt = DateTime.UtcNow;
+            submission.RejectionReason = _reason.Trim();
+            submission.RejectionCategoryId = category?.Id;
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Formularz odrzucony", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Nie udalo sie odrzucic formularza: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private void Cancel() => MudDialog.Cancel();

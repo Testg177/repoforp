@@ -24,6 +24,10 @@
     .ff-input:focus  { border-color:rgba(88,166,255,0.4);background:rgba(240,246,252,0.06); }
     .ff-input::placeholder { color:#484f58; }
     .ff-input.invalid { border-color:rgba(248,81,73,0.5);background:rgba(248,81,73,0.04); }
+    .ff-manager-field { padding:12px;border:1px solid rgba(240,246,252,0.12);background:rgba(139,148,158,0.16);border-radius:8px; }
+    .ff-manager-field .ff-label { color:#c9d1d9; }
+    .ff-manager-field .ff-input,
+    .ff-manager-field .ff-select { background:rgba(139,148,158,0.18);border-color:rgba(139,148,158,0.28);color:#8b949e; }
     .ff-select { width:100%;padding:10px 12px;background:#1c2128;border:1px solid rgba(240,246,252,0.12);border-radius:8px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box;cursor:pointer; }
     .ff-select:focus { border-color:rgba(88,166,255,0.4); }
     .ff-select option { background:#1c2128;color:#e6edf3; }
@@ -74,7 +78,8 @@
                 }
                 else
                 {
-                    <div class="ff-field-group">
+                    var managerOnly = IsManagerField(field);
+                    <div class="ff-field-group @(managerOnly ? "ff-manager-field" : string.Empty)">
                         <label class="ff-label">
                             @field.Label
                             @if (field.IsRequired) { <span class="ff-req">*</span> }
@@ -89,6 +94,7 @@
                             var taKey = field.FieldKey;
                             <textarea class="@FieldClass(taKey)"
                                       rows="4"
+                                      disabled="@managerOnly"
                                       placeholder="@(field.Placeholder ?? string.Empty)"
                                       value="@GetValue(taKey)"
                                       @oninput="@(e => SetValue(taKey, e.Value?.ToString() ?? string.Empty))"></textarea>
@@ -97,6 +103,7 @@
                         {
                             var selKey = field.FieldKey;
                             <select class="ff-select"
+                                    disabled="@managerOnly"
                                     value="@GetValue(selKey)"
                                     @onchange="@(e => SetValue(selKey, e.Value?.ToString() ?? string.Empty))">
                                 <option value="">@(field.Placeholder ?? "— Wybierz —")</option>
@@ -114,6 +121,7 @@
                                 var fKey = field.FieldKey;
                                 <label class="ff-opt-row">
                                     <input type="checkbox"
+                                           disabled="@managerOnly"
                                            checked="@IsMultiSelected(fKey, o)"
                                            @onchange="@(e => ToggleMulti(fKey, o, (bool)(e.Value ?? false)))"
                                            style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
@@ -129,6 +137,7 @@
                                 var fKey = field.FieldKey;
                                 <label class="ff-opt-row">
                                     <input type="radio"
+                                           disabled="@managerOnly"
                                            name="@fKey"
                                            value="@o"
                                            checked="@(GetValue(fKey) == o)"
@@ -146,6 +155,7 @@
                                 var fKey = field.FieldKey;
                                 <label class="ff-opt-row">
                                     <input type="checkbox"
+                                           disabled="@managerOnly"
                                            checked="@IsMultiSelected(fKey, o)"
                                            @onchange="@(e => ToggleMulti(fKey, o, (bool)(e.Value ?? false)))"
                                            style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
@@ -160,6 +170,7 @@
                             var isDecimal = field.Type == DomainFieldType.Decimal;
                             <input type="@inpType"
                                    class="@FieldClass(inpKey)"
+                                   disabled="@managerOnly"
                                    placeholder="@(field.Placeholder ?? string.Empty)"
                                    value="@GetValue(inpKey)"
                                    step="@(isDecimal ? "0.01" : null)"
@@ -257,7 +268,7 @@
 
         if (status == SubmissionStatus.Submitted)
         {
-            foreach (var f in _orderedFields.Where(f => f.IsRequired && f.Type != DomainFieldType.Section))
+            foreach (var f in _orderedFields.Where(f => f.IsRequired && f.Type != DomainFieldType.Section && !IsManagerField(f)))
             {
                 bool hasVal = f.Type is DomainFieldType.Checkbox or DomainFieldType.MultiSelect
                     ? (_multiValues.TryGetValue(f.FieldKey, out var mv) && mv.Count > 0)
@@ -288,14 +299,32 @@
                 fieldValues[k] = JsonSerializer.SerializeToElement(mv);
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        db.FormSubmissions.Add(new FormSubmission
+        var submission = new FormSubmission
         {
             FormDefinitionId  = _form.Id,
             SubmittedByUserId = _userId,
             Status            = status,
             DueDate           = due.ToUniversalTime(),
             FieldValues       = fieldValues
-        });
+        };
+        db.FormSubmissions.Add(submission);
+
+        if (status == SubmissionStatus.Submitted)
+        {
+            db.CalendarEvents.Add(new CalendarEvent
+            {
+                Title                   = BuildCalendarEventTitle(),
+                Description             = $"Termin wykonania formularza: {_form.Title}",
+                EventDate               = DateTime.SpecifyKind(due.Date, DateTimeKind.Utc),
+                DueDate                 = due.ToUniversalTime(),
+                CreatedByUserId         = _userId,
+                AssignedUserIds         = [_userId],
+                RelatedFormDefinitionId = _form.Id,
+                EventColor              = due.Date < DateTime.Today ? "red" : "orange",
+                CreatedAt               = DateTime.UtcNow
+            });
+        }
+
         await db.SaveChangesAsync();
 
         Snackbar.Add(status == SubmissionStatus.Draft
@@ -313,4 +342,23 @@
         DomainFieldType.Time     => "time",
         _                  => "text"
     };
+
+    private string BuildCalendarEventTitle()
+    {
+        var scope = GetValue("device_scope")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?.Trim();
+
+        var title = string.IsNullOrWhiteSpace(scope)
+            ? _form?.Title ?? "Przeglad"
+            : $"Przeglad: {scope}";
+
+        return title.Length <= 90 ? title : string.Concat(title.AsSpan(0, 87), "...");
+    }
+
+    private static bool IsManagerField(FormField field) =>
+        field.ValidationRules is not null
+        && field.ValidationRules.TryGetValue("fillRole", out var role)
+        && role.ValueKind == JsonValueKind.String
+        && role.GetString() == "manager";
 }
