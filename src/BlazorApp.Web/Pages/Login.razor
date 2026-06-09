@@ -15,7 +15,7 @@
         <EditForm Model="_model" OnValidSubmit="HandleLoginAsync">
             <MudTextField @bind-Value="_model.Email" Label="Email" Variant="Variant.Outlined" FullWidth="true" Class="mb-3" />
             <MudTextField @bind-Value="_model.Password" Label="Haslo" InputType="InputType.Password" Variant="Variant.Outlined" FullWidth="true" Class="mb-3" />
-            <MudCheckBox @bind-Checked="_model.RememberMe" Label="Zapamietaj mnie" Class="mb-3" />
+            <MudCheckBox @bind-Value="_model.RememberMe" Label="Zapamietaj mnie" Class="mb-3" />
 
             @if (!string.IsNullOrWhiteSpace(_errorMessage))
             {
