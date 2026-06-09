@@ -213,6 +213,7 @@ if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PGHOST")))
     app.UseHttpsRedirection();
 app.UseAntiforgery();
 
+app.MapGet("/health", () => Results.Ok("healthy"));
 app.MapStaticAssets();
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
