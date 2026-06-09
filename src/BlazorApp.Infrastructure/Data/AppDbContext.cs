@@ -32,6 +32,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<EmailQueue> EmailQueue => Set<EmailQueue>();
     public DbSet<SmsQueue> SmsQueue => Set<SmsQueue>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
 
     // IDataProtectionKeyContext
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();

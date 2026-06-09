@@ -37,6 +37,7 @@ Action<DbContextOptionsBuilder> dbOptions = options =>
             npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null);
             npgsql.CommandTimeout(30);
         });
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();

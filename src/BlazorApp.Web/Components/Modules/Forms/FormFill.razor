@@ -1,0 +1,316 @@
+@page "/forms/fill/{FormId:int}"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using DomainFieldType = BlazorApp.Domain.Enums.FieldType
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@using System.Text.Json
+@attribute [Authorize(Policy = "CanViewForms")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_form?.Title ?? "Formularz")</PageTitle>
+
+<style>
+    .ff-label  { display:block;font-size:11px;font-weight:500;color:#7d8590;margin-bottom:5px; }
+    .ff-help   { font-size:11px;color:#484f58;margin-bottom:5px;line-height:1.4; }
+    .ff-req    { color:#f85149;margin-left:2px; }
+    .ff-input  { width:100%;padding:10px 12px;background:rgba(240,246,252,0.04);border:1px solid rgba(240,246,252,0.12);border-radius:8px;color:#e6edf3;font-size:13px;outline:none;transition:border-color .15s;box-sizing:border-box; }
+    .ff-input:focus  { border-color:rgba(88,166,255,0.4);background:rgba(240,246,252,0.06); }
+    .ff-input::placeholder { color:#484f58; }
+    .ff-input.invalid { border-color:rgba(248,81,73,0.5);background:rgba(248,81,73,0.04); }
+    .ff-select { width:100%;padding:10px 12px;background:#1c2128;border:1px solid rgba(240,246,252,0.12);border-radius:8px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box;cursor:pointer; }
+    .ff-select:focus { border-color:rgba(88,166,255,0.4); }
+    .ff-select option { background:#1c2128;color:#e6edf3; }
+    .ff-opt-row { display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;cursor:pointer;transition:background .12s; }
+    .ff-opt-row:hover { background:rgba(240,246,252,0.04); }
+    .ff-section-title { font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#484f58;padding:20px 0 8px; }
+    .ff-section-line { height:1px;background:rgba(240,246,252,0.08);margin-bottom:18px; }
+    .ff-field-group { margin-bottom:18px; }
+    .ff-error { font-size:11px;color:#f85149;margin-top:4px; }
+</style>
+
+<div style="max-width:740px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small"
+                       OnClick="@(() => Nav.NavigateTo("/forms"))" />
+        @if (_form is not null)
+        {
+            <div>
+                <div style="font-size:18px;font-weight:700;color:#e6edf3;">@_form.Title</div>
+                @if (!string.IsNullOrEmpty(_form.Description))
+                {
+                    <div style="font-size:12px;color:#7d8590;margin-top:2px;">@_form.Description</div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_form is null)
+    {
+        <div style="padding:64px;text-align:center;color:#484f58;font-size:13px;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">❌</div>
+            Formularz nie istnieje lub jest nieaktywny.
+        </div>
+    }
+    else
+    {
+        <div class="dash-panel" style="padding:28px;">
+            @foreach (var field in _orderedFields)
+            {
+                @if (field.Type == DomainFieldType.Section)
+                {
+                    <div class="ff-section-title">@field.Label</div>
+                    <div class="ff-section-line"></div>
+                }
+                else
+                {
+                    <div class="ff-field-group">
+                        <label class="ff-label">
+                            @field.Label
+                            @if (field.IsRequired) { <span class="ff-req">*</span> }
+                        </label>
+                        @if (!string.IsNullOrEmpty(field.HelpText))
+                        {
+                            <div class="ff-help">@field.HelpText</div>
+                        }
+
+                        @if (field.Type == DomainFieldType.TextArea)
+                        {
+                            var taKey = field.FieldKey;
+                            <textarea class="@FieldClass(taKey)"
+                                      rows="4"
+                                      placeholder="@(field.Placeholder ?? string.Empty)"
+                                      value="@GetValue(taKey)"
+                                      @oninput="@(e => SetValue(taKey, e.Value?.ToString() ?? string.Empty))"></textarea>
+                        }
+                        else if (field.Type == DomainFieldType.Select)
+                        {
+                            var selKey = field.FieldKey;
+                            <select class="ff-select"
+                                    value="@GetValue(selKey)"
+                                    @onchange="@(e => SetValue(selKey, e.Value?.ToString() ?? string.Empty))">
+                                <option value="">@(field.Placeholder ?? "— Wybierz —")</option>
+                                @foreach (var opt in field.Options ?? [])
+                                {
+                                    <option value="@opt">@opt</option>
+                                }
+                            </select>
+                        }
+                        else if (field.Type == DomainFieldType.MultiSelect)
+                        {
+                            @foreach (var opt in field.Options ?? [])
+                            {
+                                var o = opt;
+                                var fKey = field.FieldKey;
+                                <label class="ff-opt-row">
+                                    <input type="checkbox"
+                                           checked="@IsMultiSelected(fKey, o)"
+                                           @onchange="@(e => ToggleMulti(fKey, o, (bool)(e.Value ?? false)))"
+                                           style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
+                                    <span style="font-size:13px;color:#e6edf3;">@opt</span>
+                                </label>
+                            }
+                        }
+                        else if (field.Type == DomainFieldType.Radio)
+                        {
+                            @foreach (var opt in field.Options ?? [])
+                            {
+                                var o = opt;
+                                var fKey = field.FieldKey;
+                                <label class="ff-opt-row">
+                                    <input type="radio"
+                                           name="@fKey"
+                                           value="@o"
+                                           checked="@(GetValue(fKey) == o)"
+                                           @onchange="@(e => SetValue(fKey, o))"
+                                           style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
+                                    <span style="font-size:13px;color:#e6edf3;">@opt</span>
+                                </label>
+                            }
+                        }
+                        else if (field.Type == DomainFieldType.Checkbox)
+                        {
+                            @foreach (var opt in field.Options ?? [])
+                            {
+                                var o = opt;
+                                var fKey = field.FieldKey;
+                                <label class="ff-opt-row">
+                                    <input type="checkbox"
+                                           checked="@IsMultiSelected(fKey, o)"
+                                           @onchange="@(e => ToggleMulti(fKey, o, (bool)(e.Value ?? false)))"
+                                           style="width:15px;height:15px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
+                                    <span style="font-size:13px;color:#e6edf3;">@opt</span>
+                                </label>
+                            }
+                        }
+                        else
+                        {
+                            var inpKey = field.FieldKey;
+                            var inpType = GetHtmlType(field.Type);
+                            var isDecimal = field.Type == DomainFieldType.Decimal;
+                            <input type="@inpType"
+                                   class="@FieldClass(inpKey)"
+                                   placeholder="@(field.Placeholder ?? string.Empty)"
+                                   value="@GetValue(inpKey)"
+                                   step="@(isDecimal ? "0.01" : null)"
+                                   @oninput="@(e => SetValue(inpKey, e.Value?.ToString() ?? string.Empty))" />
+                        }
+
+                        @if (IsInvalid(field.FieldKey))
+                        {
+                            <div class="ff-error">To pole jest wymagane</div>
+                        }
+                    </div>
+                }
+            }
+
+            <div style="border-top:1px solid rgba(240,246,252,0.08);margin-top:8px;padding-top:20px;">
+                <label class="ff-label">Termin realizacji *</label>
+                <input type="date" class="ff-input"
+                       value="@_dueDateStr"
+                       @onchange="@(e => { _dueDateStr = e.Value?.ToString() ?? _dueDateStr; })"
+                       style="max-width:220px;" />
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;padding-top:8px;">
+                <button type="button" @onclick="@(() => Nav.NavigateTo("/forms"))"
+                        style="padding:10px 18px;border-radius:8px;border:1px solid rgba(240,246,252,0.15);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer;">
+                    Anuluj
+                </button>
+                <button type="button" disabled="@_saving" @onclick="SaveDraft"
+                        style="@($"padding:10px 18px;border-radius:8px;border:1px solid rgba(240,246,252,0.2);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer;opacity:{(_saving?0.5:1)};")">
+                    💾 Zapisz szkic
+                </button>
+                <button type="button" disabled="@_saving" @onclick="SubmitForm"
+                        style="@($"padding:10px 22px;border-radius:8px;border:none;background:#58a6ff;color:#0d1117;font-size:13px;font-weight:600;cursor:pointer;opacity:{(_saving?0.5:1)};")">
+                    @(_saving ? "Zapisywanie..." : "Złóż formularz →")
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int FormId { get; set; }
+
+    private FormDefinition? _form;
+    private List<FormField> _orderedFields = [];
+    private bool _loading = true, _saving;
+    private string? _userId;
+    private string _dueDateStr = DateTime.Today.AddDays(7).ToString("yyyy-MM-dd");
+
+    private Dictionary<string, string> _values = new();
+    private Dictionary<string, List<string>> _multiValues = new();
+    private HashSet<string> _invalidFields = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _form = await db.FormDefinitions
+            .Include(f => f.Fields)
+            .FirstOrDefaultAsync(f => f.Id == FormId && f.IsActive);
+
+        if (_form is not null)
+        {
+            _orderedFields = _form.Fields.OrderBy(f => f.Order).ToList();
+            if (_form.EscalationAfterDays is int days)
+                _dueDateStr = DateTime.Today.AddDays(days).ToString("yyyy-MM-dd");
+        }
+
+        _loading = false;
+    }
+
+    private string FieldClass(string key) => IsInvalid(key) ? "ff-input invalid" : "ff-input";
+    private string GetValue(string key) => _values.TryGetValue(key, out var v) ? v : string.Empty;
+    private void SetValue(string key, string val) { _values[key] = val; _invalidFields.Remove(key); }
+    private bool IsMultiSelected(string key, string opt) => _multiValues.TryGetValue(key, out var l) && l.Contains(opt);
+    private void ToggleMulti(string key, string opt, bool add)
+    {
+        if (!_multiValues.ContainsKey(key)) _multiValues[key] = [];
+        if (add) _multiValues[key].Add(opt);
+        else _multiValues[key].Remove(opt);
+        _invalidFields.Remove(key);
+    }
+    private bool IsInvalid(string key) => _invalidFields.Contains(key);
+
+    private Task SaveDraft() => Save(SubmissionStatus.Draft);
+    private Task SubmitForm() => Save(SubmissionStatus.Submitted);
+
+    private async Task Save(SubmissionStatus status)
+    {
+        if (_form is null || _userId is null) return;
+
+        _invalidFields.Clear();
+
+        if (status == SubmissionStatus.Submitted)
+        {
+            foreach (var f in _orderedFields.Where(f => f.IsRequired && f.Type != DomainFieldType.Section))
+            {
+                bool hasVal = f.Type is DomainFieldType.Checkbox or DomainFieldType.MultiSelect
+                    ? (_multiValues.TryGetValue(f.FieldKey, out var mv) && mv.Count > 0)
+                    : (_values.TryGetValue(f.FieldKey, out var v) && !string.IsNullOrWhiteSpace(v));
+                if (!hasVal) _invalidFields.Add(f.FieldKey);
+            }
+
+            if (_invalidFields.Count > 0)
+            {
+                Snackbar.Add("Uzupełnij wszystkie wymagane pola", Severity.Warning);
+                StateHasChanged();
+                return;
+            }
+        }
+
+        _saving = true;
+
+        DateTime.TryParse(_dueDateStr, out var due);
+        if (due == default) due = DateTime.Today.AddDays(_form.EscalationAfterDays ?? 7);
+
+        var fieldValues = new Dictionary<string, JsonElement>();
+        foreach (var (k, v) in _values)
+            if (!string.IsNullOrEmpty(v))
+                fieldValues[k] = JsonSerializer.SerializeToElement(v);
+
+        foreach (var (k, mv) in _multiValues)
+            if (mv.Count > 0)
+                fieldValues[k] = JsonSerializer.SerializeToElement(mv);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.FormSubmissions.Add(new FormSubmission
+        {
+            FormDefinitionId  = _form.Id,
+            SubmittedByUserId = _userId,
+            Status            = status,
+            DueDate           = due.ToUniversalTime(),
+            FieldValues       = fieldValues
+        });
+        await db.SaveChangesAsync();
+
+        Snackbar.Add(status == SubmissionStatus.Draft
+            ? "Szkic zapisany"
+            : "Formularz złożony pomyślnie", Severity.Success);
+        Nav.NavigateTo("/forms");
+    }
+
+    private static string GetHtmlType(DomainFieldType t) => t switch
+    {
+        DomainFieldType.Number   => "number",
+        DomainFieldType.Decimal  => "number",
+        DomainFieldType.Date     => "date",
+        DomainFieldType.DateTime => "datetime-local",
+        DomainFieldType.Time     => "time",
+        _                  => "text"
+    };
+}

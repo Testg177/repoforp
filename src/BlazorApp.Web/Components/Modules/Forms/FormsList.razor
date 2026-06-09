@@ -4,100 +4,253 @@
 @using BlazorApp.Infrastructure.Data
 @using MudBlazor
 @using Microsoft.EntityFrameworkCore
-@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "CanViewForms")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Policy = "CanViewForms")]
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
 @inject NavigationManager Nav
-@inject IDialogService DialogService
-@inject ISnackbar Snackbar
 
-<MudText Typo="Typo.h4" Class="mb-4">Formularze</MudText>
+<PageTitle>Formularze</PageTitle>
 
-<MudPaper Class="mb-4 pa-3" Elevation="1">
-    <MudGrid>
-        <MudItem xs="12" sm="4">
-            <MudTextField @bind-Value="_search" @bind-Value:after="LoadData" Label="Szukaj"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                          Immediate="true" />
-        </MudItem>
-        <MudItem xs="12" sm="3">
-            <MudSelect @bind-Value="_statusFilter" @bind-Value:after="LoadData" Label="Status"
-                       T="string" Clearable="true">
-                <MudSelectItem Value="@("Draft")">Szkic</MudSelectItem>
-                <MudSelectItem Value="@("Submitted")">Złożony</MudSelectItem>
-                <MudSelectItem Value="@("InReview")">W trakcie oceny</MudSelectItem>
-                <MudSelectItem Value="@("Approved")">Zatwierdzony</MudSelectItem>
-                <MudSelectItem Value="@("Rejected")">Odrzucony</MudSelectItem>
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" sm="5" Class="d-flex align-end justify-end">
-            <AuthorizeView Policy="CanViewForms">
-                <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           Href="/forms/new">
-                    Nowe zgłoszenie
-                </MudButton>
-            </AuthorizeView>
-        </MudItem>
-    </MudGrid>
-</MudPaper>
-
-<MudTable Items="_submissions" Loading="@_loading" Hover="true" Breakpoint="Breakpoint.Sm"
-          RowsPerPage="20" Dense="true">
-    <HeaderContent>
-        <MudTh>Formularz</MudTh>
-        <MudTh>Status</MudTh>
-        <MudTh>Złożono</MudTh>
-        <MudTh>Termin</MudTh>
-        <MudTh>Akcje</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Formularz">@context.FormDefinition?.Title</MudTd>
-        <MudTd DataLabel="Status">
-            <StatusBadge Status="@context.Status" />
-            @if (context.IsLate && context.Status == SubmissionStatus.Draft)
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div style="font-size:20px;font-weight:700;color:#e6edf3;">Formularze</div>
+    <div style="display:flex;gap:6px;">
+        <button @onclick='() => SetTab("catalog")'
+                style="padding:8px 16px;border-radius:7px;border:1px solid @(_tab=="catalog"?"rgba(88,166,255,0.5)":"rgba(240,246,252,0.12)");background:@(_tab=="catalog"?"rgba(88,166,255,0.1)":"transparent");color:@(_tab=="catalog"?"#58a6ff":"#7d8590");font-size:13px;cursor:pointer;transition:all .15s;">
+            Dostępne formularze
+        </button>
+        <button @onclick='() => SetTab("submissions")'
+                style="padding:8px 16px;border-radius:7px;border:1px solid @(_tab=="submissions"?"rgba(88,166,255,0.5)":"rgba(240,246,252,0.12)");background:@(_tab=="submissions"?"rgba(88,166,255,0.1)":"transparent");color:@(_tab=="submissions"?"#58a6ff":"#7d8590");font-size:13px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px;">
+            Moje zgłoszenia
+            @if (_draftCount > 0)
             {
-                <MudChip T="string" Color="Color.Error" Size="Size.Small" Class="ml-1">Spóźniony</MudChip>
+                <span style="background:#f85149;color:white;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;">@_draftCount</span>
             }
-        </MudTd>
-        <MudTd DataLabel="Złożono">@context.SubmittedAt.ToString("dd.MM.yyyy HH:mm")</MudTd>
-        <MudTd DataLabel="Termin">@context.DueDate.ToString("dd.MM.yyyy")</MudTd>
-        <MudTd>
-            <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                           Href="@($"/forms/{context.Id}")" />
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudText>Brak wyników</MudText>
-    </NoRecordsContent>
-</MudTable>
+        </button>
+    </div>
+</div>
+
+@if (_tab == "catalog")
+{
+    @if (_loadingForms)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_formDefs.Count == 0)
+    {
+        <div style="padding:64px;text-align:center;color:#484f58;font-size:13px;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
+            Brak dostępnych formularzy. Skontaktuj się z administratorem.
+        </div>
+    }
+    else
+    {
+        @if (_categories.Count > 1)
+        {
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+                <button @onclick='() => _catFilter = null'
+                        style="padding:5px 14px;border-radius:20px;border:1px solid @(_catFilter==null?"rgba(88,166,255,0.5)":"rgba(240,246,252,0.12)");background:@(_catFilter==null?"rgba(88,166,255,0.1)":"transparent");color:@(_catFilter==null?"#58a6ff":"#7d8590");font-size:12px;cursor:pointer;">
+                    Wszystkie
+                </button>
+                @foreach (var cat in _categories)
+                {
+                    var c = cat;
+                    <button @onclick='() => _catFilter = c'
+                            style="padding:5px 14px;border-radius:20px;border:1px solid @(_catFilter==c?"rgba(88,166,255,0.5)":"rgba(240,246,252,0.12)");background:@(_catFilter==c?"rgba(88,166,255,0.1)":"transparent");color:@(_catFilter==c?"#58a6ff":"#7d8590");font-size:12px;cursor:pointer;">
+                        @c
+                    </button>
+                }
+            </div>
+        }
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;">
+            @foreach (var f in FilteredForms)
+            {
+                var form = f;
+                <div class="dash-panel" style="padding:0;cursor:pointer;overflow:hidden;transition:border-color .15s;border:1px solid rgba(240,246,252,0.08);"
+                     @onclick="@(() => Nav.NavigateTo($"/forms/fill/{form.Id}"))">
+                    <div style="padding:18px 18px 14px;">
+                        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
+                            <div style="width:40px;height:40px;border-radius:10px;background:rgba(88,166,255,0.1);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">
+                                @GetFormIcon(form.Category)
+                            </div>
+                            <div style="min-width:0;">
+                                <div style="font-size:14px;font-weight:600;color:#e6edf3;line-height:1.3;">@form.Title</div>
+                                <div style="font-size:11px;color:#484f58;font-family:monospace;margin-top:2px;">@form.Code</div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(form.Description))
+                        {
+                            <div style="font-size:12px;color:#7d8590;line-height:1.5;margin-bottom:10px;">@form.Description</div>
+                        }
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                            @if (!string.IsNullOrEmpty(form.Category))
+                            {
+                                <span style="padding:2px 8px;border-radius:12px;background:rgba(63,185,80,0.1);color:#3fb950;font-size:10px;font-weight:600;">@form.Category</span>
+                            }
+                            @if (form.RequiresApproval)
+                            {
+                                <span style="padding:2px 8px;border-radius:12px;background:rgba(210,153,34,0.1);color:#d29922;font-size:10px;">wymaga zatwierdzenia</span>
+                            }
+                            <span style="font-size:11px;color:#484f58;margin-left:auto;">@(form.Fields?.Count ?? 0) pól</span>
+                        </div>
+                    </div>
+                    <div style="padding:12px 18px;border-top:1px solid rgba(240,246,252,0.06);background:rgba(88,166,255,0.04);display:flex;align-items:center;justify-content:space-between;">
+                        <span style="font-size:12px;color:#484f58;">Termin: @(form.EscalationAfterDays) dni</span>
+                        <span style="font-size:12px;font-weight:600;color:#58a6ff;">Wypełnij →</span>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+else
+{
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <input @bind="_search" @bind:after="LoadSubmissions" placeholder="Szukaj formularza..."
+               style="padding:9px 12px;background:rgba(240,246,252,0.04);border:1px solid rgba(240,246,252,0.12);border-radius:7px;color:#e6edf3;font-size:13px;outline:none;width:220px;" />
+        <select @bind="_statusFilter" @bind:after="LoadSubmissions"
+                style="padding:9px 12px;background:#1c2128;border:1px solid rgba(240,246,252,0.12);border-radius:7px;color:#e6edf3;font-size:13px;outline:none;cursor:pointer;">
+            <option value="">Wszystkie statusy</option>
+            <option value="Draft">Szkic</option>
+            <option value="Submitted">Złożony</option>
+            <option value="InReview">W przeglądzie</option>
+            <option value="Approved">Zatwierdzony</option>
+            <option value="Rejected">Odrzucony</option>
+            <option value="RequiresChanges">Do poprawki</option>
+        </select>
+    </div>
+
+    @if (_loadingSubmissions)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_submissions.Count == 0)
+    {
+        <div style="padding:64px;text-align:center;color:#484f58;font-size:13px;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">📂</div>
+            Brak zgłoszeń. Przejdź do "Dostępne formularze" aby złożyć pierwsze.
+        </div>
+    }
+    else
+    {
+        <div class="dash-panel">
+            @foreach (var s in _submissions)
+            {
+                var sub = s;
+                <div style="display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid rgba(240,246,252,0.05);cursor:pointer;transition:background .12s;"
+                     @onmouseover="@(e => {})" @onclick="@(() => Nav.NavigateTo($"/forms/{sub.Id}"))">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:500;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            @(sub.FormDefinition?.Title ?? "—")
+                        </div>
+                        <div style="font-size:11px;color:#484f58;margin-top:2px;">
+                            Złożono @sub.SubmittedAt.ToString("dd.MM.yyyy HH:mm")
+                        </div>
+                    </div>
+                    <span class="sz-badge-pill badge-@sub.Status.ToString().ToLower()">@GetStatusLabel(sub.Status)</span>
+                    <div style="font-size:12px;color:@(sub.IsLate && sub.Status == SubmissionStatus.Draft ? "#f85149" : "#484f58");text-align:right;min-width:80px;">
+                        @sub.DueDate.ToString("dd.MM.yyyy")
+                        @if (sub.IsLate && sub.Status == SubmissionStatus.Draft)
+                        {
+                            <div style="font-size:10px;font-weight:600;">⚠ spóźnione</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
 
 @code {
+    private string _tab = "catalog";
+    private string? _catFilter;
+
+    private List<FormDefinition> _formDefs = [];
+    private List<string> _categories = [];
     private List<FormSubmission> _submissions = [];
-    private bool _loading = true;
-    private string? _search;
-    private string? _statusFilter;
 
-    protected override async Task OnInitializedAsync() => await LoadData();
+    private bool _loadingForms = true, _loadingSubmissions = false;
+    private string? _search, _statusFilter;
+    private int _draftCount;
+    private string? _userId;
 
-    private async Task LoadData()
+    private IEnumerable<FormDefinition> FilteredForms =>
+        _catFilter is null ? _formDefs : _formDefs.Where(f => f.Category == _catFilter);
+
+    protected override async Task OnInitializedAsync()
     {
-        _loading = true;
-        await using var Db = await DbFactory.CreateDbContextAsync();
-        var query = Db.FormSubmissions
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await Task.WhenAll(LoadFormDefs(), LoadSubmissions());
+    }
+
+    private void SetTab(string tab) { _tab = tab; }
+
+    private async Task LoadFormDefs()
+    {
+        _loadingForms = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _formDefs = await db.FormDefinitions
+            .Include(f => f.Fields)
+            .Where(f => f.IsActive)
+            .OrderBy(f => f.Category).ThenBy(f => f.Title)
+            .ToListAsync();
+        _categories = _formDefs
+            .Select(f => f.Category)
+            .Where(c => !string.IsNullOrEmpty(c))
+            .Distinct()
+            .OrderBy(c => c)
+            .ToList()!;
+        _loadingForms = false;
+    }
+
+    private async Task LoadSubmissions()
+    {
+        if (_userId is null) return;
+        _loadingSubmissions = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var q = db.FormSubmissions
             .Include(s => s.FormDefinition)
+            .Where(s => s.SubmittedByUserId == _userId)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(_search))
-            query = query.Where(s => s.FormDefinition!.Title.Contains(_search));
+            q = q.Where(s => s.FormDefinition!.Title.Contains(_search));
 
         if (!string.IsNullOrWhiteSpace(_statusFilter) && Enum.TryParse<SubmissionStatus>(_statusFilter, out var st))
-            query = query.Where(s => s.Status == st);
+            q = q.Where(s => s.Status == st);
 
-        _submissions = await query
-            .OrderByDescending(s => s.SubmittedAt)
-            .Take(200)
-            .ToListAsync();
+        _submissions = await q.OrderByDescending(s => s.SubmittedAt).Take(100).ToListAsync();
 
-        _loading = false;
+        _draftCount = await db.FormSubmissions.CountAsync(s =>
+            s.SubmittedByUserId == _userId &&
+            (s.Status == SubmissionStatus.Draft || s.Status == SubmissionStatus.RequiresChanges));
+
+        _loadingSubmissions = false;
     }
+
+    private static string GetFormIcon(string? category) => category?.ToUpperInvariant() switch
+    {
+        "BHP" => "🦺",
+        "HR" => "👤",
+        "QA" or "JAKOŚĆ" => "✅",
+        "FINANSE" or "FIN" => "💰",
+        "PRODUKCJA" or "PROD" => "⚙️",
+        "IT" => "💻",
+        _ => "📋"
+    };
+
+    private static string GetStatusLabel(SubmissionStatus s) => s switch
+    {
+        SubmissionStatus.Draft => "Szkic",
+        SubmissionStatus.Submitted => "Złożony",
+        SubmissionStatus.InReview => "W przeglądzie",
+        SubmissionStatus.Approved => "Zatwierdzone",
+        SubmissionStatus.Rejected => "Odrzucony",
+        SubmissionStatus.RequiresChanges => "Do poprawki",
+        _ => s.ToString()
+    };
 }

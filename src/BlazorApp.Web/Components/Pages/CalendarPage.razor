@@ -1,0 +1,523 @@
+@page "/calendar"
+@using BlazorApp.Domain.Entities
+@using BlazorApp.Domain.Enums
+@using BlazorApp.Infrastructure.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Kalendarz</PageTitle>
+
+<style>
+    .cal-grid { display:grid;grid-template-columns:repeat(7,1fr);border:1px solid rgba(240,246,252,0.08);border-radius:10px;overflow:hidden; }
+    .cal-hdr  { padding:10px 0;text-align:center;background:#161b22;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#484f58;border-bottom:1px solid rgba(240,246,252,0.08); }
+    .cal-cell { min-height:110px;padding:8px;background:#0d1117;border-right:1px solid rgba(240,246,252,0.05);border-bottom:1px solid rgba(240,246,252,0.05);cursor:pointer;transition:background .12s;vertical-align:top; }
+    .cal-cell:nth-child(7n) { border-right:none; }
+    .cal-cell:hover { background:rgba(240,246,252,0.03); }
+    .cal-cell.today { background:rgba(88,166,255,0.05); }
+    .cal-cell.selected { background:rgba(88,166,255,0.1);box-shadow:inset 0 0 0 1px rgba(88,166,255,0.4); }
+    .cal-cell.other  { opacity:0.35; }
+    .cal-day { font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:5px;display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%; }
+    .cal-cell.today .cal-day { background:#58a6ff;color:#0d1117; }
+    .ev-pill { padding:2px 7px;border-radius:12px;font-size:10px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block; }
+    .ev-pill.blue   { background:rgba(88,166,255,0.18);color:#58a6ff; }
+    .ev-pill.green  { background:rgba(63,185,80,0.18);color:#3fb950; }
+    .ev-pill.red    { background:rgba(248,81,73,0.18);color:#f85149; }
+    .ev-pill.orange { background:rgba(210,153,34,0.18);color:#d29922; }
+    .ev-pill.done   { opacity:0.4;text-decoration:line-through; }
+    .ev-more { font-size:10px;color:#484f58;padding-left:4px; }
+    .side-panel { position:sticky;top:0;background:#161b22;border:1px solid rgba(240,246,252,0.08);border-radius:10px;padding:20px;min-height:200px; }
+    .ev-modal-bg { position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:999; }
+    .ev-modal { position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;background:#161b22;border:1px solid rgba(240,246,252,0.1);border-radius:12px;width:540px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:28px; }
+    .ev-input { width:100%;padding:9px 12px;background:rgba(240,246,252,0.04);border:1px solid rgba(240,246,252,0.12);border-radius:7px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box;transition:border-color .15s; }
+    .ev-input:focus { border-color:rgba(88,166,255,0.4); }
+    .ev-input::placeholder { color:#484f58; }
+    .ev-label { display:block;font-size:11px;font-weight:500;color:#7d8590;margin-bottom:5px; }
+    .ev-select { width:100%;padding:9px 12px;background:#1c2128;border:1px solid rgba(240,246,252,0.12);border-radius:7px;color:#e6edf3;font-size:13px;outline:none;box-sizing:border-box; }
+    .user-chip { display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.25);border-radius:20px;font-size:12px;color:#58a6ff;margin:3px;cursor:pointer; }
+</style>
+
+<!-- Header -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+    <div style="font-size:20px;font-weight:700;color:#e6edf3;">Kalendarz zdarzeń</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+        <button @onclick="PrevMonth" style="width:34px;height:34px;border-radius:7px;border:1px solid rgba(240,246,252,0.12);background:transparent;color:#e6edf3;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">‹</button>
+        <div style="font-size:15px;font-weight:600;color:#e6edf3;min-width:160px;text-align:center;">@_viewDate.ToString("MMMM yyyy", new System.Globalization.CultureInfo("pl-PL")).ToUpperInvariant()</div>
+        <button @onclick="NextMonth" style="width:34px;height:34px;border-radius:7px;border:1px solid rgba(240,246,252,0.12);background:transparent;color:#e6edf3;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">›</button>
+        <button @onclick="@(() => _viewDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1))"
+                style="padding:7px 14px;border-radius:7px;border:1px solid rgba(240,246,252,0.12);background:transparent;color:#7d8590;font-size:12px;cursor:pointer;">Dziś</button>
+
+        <AuthorizeView Policy="CanApproveForms">
+            <button @onclick="OpenAddDialog"
+                    style="padding:8px 16px;border-radius:7px;border:none;background:#58a6ff;color:#0d1117;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+                + Dodaj zdarzenie
+            </button>
+        </AuthorizeView>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_loadError is not null)
+{
+    <div style="padding:32px;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.2);border-radius:10px;color:#f85149;font-size:13px;">
+        <strong>Błąd ładowania kalendarza:</strong><br />@_loadError
+    </div>
+}
+else
+{
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;">
+        <!-- Calendar grid -->
+        <div>
+            <div class="cal-grid">
+                @foreach (var day in new[] { "Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd" })
+                {
+                    <div class="cal-hdr">@day</div>
+                }
+
+                @foreach (var cell in _calCells)
+                {
+                    var c = cell;
+                    var cellEvents = EventsForDay(c.Date);
+                    var isToday = c.Date == DateTime.Today;
+                    var isSelected = c.Date == _selectedDay;
+                    var isOther = c.Date.Month != _viewDate.Month;
+
+                    <div class="cal-cell @(isToday?"today":"") @(isSelected?"selected":"") @(isOther?"other":"")"
+                         @onclick="@(() => SelectDay(c.Date))">
+                        <div class="cal-day">@c.Date.Day</div>
+                        @foreach (var ev in cellEvents.Take(3))
+                        {
+                            <span class="ev-pill @ev.EventColor @(ev.IsCompleted?"done":"")">
+                                @(ev.RelatedFormDefinitionId.HasValue ? "📋 " : "")@ev.Title
+                            </span>
+                        }
+                        @if (cellEvents.Count > 3)
+                        {
+                            <div class="ev-more">+@(cellEvents.Count - 3) więcej</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Side panel: selected day events -->
+        <div class="side-panel">
+            @if (_selectedDay is null)
+            {
+                <div style="text-align:center;color:#484f58;font-size:13px;padding:32px 0;">
+                    <div style="font-size:2rem;margin-bottom:8px;">📅</div>
+                    Kliknij dzień aby zobaczyć zdarzenia
+                </div>
+            }
+            else
+            {
+                <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:14px;">
+                    @_selectedDay.Value.ToString("dddd, d MMMM yyyy", new System.Globalization.CultureInfo("pl-PL"))
+                </div>
+
+                @if (EventsForDay(_selectedDay.Value).Count == 0)
+                {
+                    <div style="text-align:center;color:#484f58;font-size:12px;padding:24px 0;">Brak zdarzeń</div>
+                    <AuthorizeView Policy="CanApproveForms">
+                        <button @onclick="OpenAddDialogForDay"
+                                style="width:100%;padding:9px;border-radius:7px;border:1px solid rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);color:#58a6ff;font-size:12px;cursor:pointer;margin-top:8px;">
+                            + Dodaj zdarzenie na ten dzień
+                        </button>
+                    </AuthorizeView>
+                }
+                else
+                {
+                    @foreach (var ev in EventsForDay(_selectedDay.Value))
+                    {
+                        var e = ev;
+                        <div style="padding:12px;border-radius:8px;background:rgba(240,246,252,0.03);border:1px solid rgba(240,246,252,0.07);margin-bottom:8px;">
+                            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                                <div>
+                                    <div style="font-size:13px;font-weight:600;color:@(e.IsCompleted?"#484f58":"#e6edf3");@(e.IsCompleted?"text-decoration:line-through;":"")">@e.Title</div>
+                                    @if (!string.IsNullOrEmpty(e.Description))
+                                    {
+                                        <div style="font-size:11px;color:#7d8590;margin-top:3px;line-height:1.4;">@e.Description</div>
+                                    }
+                                </div>
+                                <span class="ev-pill @e.EventColor" style="flex-shrink:0;">@GetColorLabel(e.EventColor)</span>
+                            </div>
+                            @if (e.DueDate.HasValue)
+                            {
+                                var overdue = e.DueDate.HasValue && e.DueDate.Value.Date < DateTime.UtcNow.Date && !e.IsCompleted;
+                                <div style="font-size:11px;color:@(overdue?"#f85149":"#484f58");margin-bottom:8px;">
+                                    ⏰ Termin: @e.DueDate.Value.ToString("dd.MM.yyyy")
+                                    @if (overdue) { <strong> — PRZEKROCZONY</strong> }
+                                </div>
+                            }
+                            @if (e.RelatedFormDefinition is not null)
+                            {
+                                var alreadyFilled = HasFilledForm(e);
+                                <div style="margin-bottom:8px;padding:10px 12px;border-radius:8px;background:@(alreadyFilled?"rgba(63,185,80,0.08)":"rgba(88,166,255,0.08)");border:1px solid @(alreadyFilled?"rgba(63,185,80,0.25)":"rgba(88,166,255,0.25)");">
+                                    <div style="font-size:11px;font-weight:600;color:@(alreadyFilled?"#3fb950":"#58a6ff");margin-bottom:6px;">
+                                        📋 @e.RelatedFormDefinition.Title
+                                    </div>
+                                    @if (alreadyFilled)
+                                    {
+                                        <div style="font-size:11px;color:#3fb950;">✓ Formularz już wypełniony</div>
+                                    }
+                                    else
+                                    {
+                                        <a href="/forms/fill/@e.RelatedFormDefinitionId"
+                                           style="display:block;width:100%;padding:7px 0;text-align:center;border-radius:6px;background:#58a6ff;color:#0d1117;font-size:12px;font-weight:700;text-decoration:none;box-sizing:border-box;margin-top:4px;">
+                                            Wypełnij formularz →
+                                        </a>
+                                    }
+                                </div>
+                            }
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+                                @if (e.AssignedUserIds.Length > 0)
+                                {
+                                    <div style="font-size:10px;color:#484f58;">
+                                        Przypisano do @e.AssignedUserIds.Length os.
+                                    </div>
+                                }
+                                else { <div></div> }
+                                <AuthorizeView Policy="CanApproveForms">
+                                    <div style="display:flex;gap:6px;">
+                                        <button @onclick="@(() => ToggleComplete(e))"
+                                                style="padding:4px 10px;border-radius:6px;border:1px solid @(e.IsCompleted?"rgba(63,185,80,0.4)":"rgba(240,246,252,0.15)");background:transparent;color:@(e.IsCompleted?"#3fb950":"#7d8590");font-size:11px;cursor:pointer;">
+                                            @(e.IsCompleted ? "✓ Wykonane" : "Oznacz wykonane")
+                                        </button>
+                                        <button @onclick="@(() => DeleteEvent(e))"
+                                                style="padding:4px 10px;border-radius:6px;border:1px solid rgba(248,81,73,0.2);background:transparent;color:#f85149;font-size:11px;cursor:pointer;">
+                                            Usuń
+                                        </button>
+                                    </div>
+                                </AuthorizeView>
+                            </div>
+                        </div>
+                    }
+                    <AuthorizeView Policy="CanApproveForms">
+                        <button @onclick="OpenAddDialogForDay"
+                                style="width:100%;padding:8px;border-radius:7px;border:1px solid rgba(88,166,255,0.25);background:transparent;color:#58a6ff;font-size:12px;cursor:pointer;margin-top:4px;">
+                            + Dodaj zdarzenie
+                        </button>
+                    </AuthorizeView>
+                }
+            }
+        </div>
+    </div>
+}
+
+<!-- Add Event Modal -->
+@if (_showModal)
+{
+    <div class="ev-modal-bg" @onclick="CloseModal"></div>
+    <div class="ev-modal">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+            <div style="font-size:16px;font-weight:700;color:#e6edf3;">Nowe zdarzenie</div>
+            <button @onclick="CloseModal" style="background:transparent;border:none;color:#7d8590;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+        </div>
+
+        <div style="display:grid;gap:14px;">
+            <div>
+                <label class="ev-label">Tytuł *</label>
+                <input @bind="_newTitle" class="ev-input" placeholder="Np. Przegląd maszyny nr 5" />
+            </div>
+            <div>
+                <label class="ev-label">Opis</label>
+                <textarea @bind="_newDesc" class="ev-input" rows="3" placeholder="Szczegółowy opis zdarzenia..." style="resize:vertical;"></textarea>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                    <label class="ev-label">Data zdarzenia *</label>
+                    <input type="date" @bind="_newEventDate" class="ev-input" />
+                </div>
+                <div>
+                    <label class="ev-label">Termin wykonania</label>
+                    <input type="date" @bind="_newDueDate" class="ev-input" />
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                    <label class="ev-label">Kolor</label>
+                    <select @bind="_newColor" class="ev-select">
+                        <option value="blue">Niebieski (informacja)</option>
+                        <option value="green">Zielony (ok / wykonane)</option>
+                        <option value="orange">Pomarańczowy (uwaga)</option>
+                        <option value="red">Czerwony (pilne)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="ev-label">Formularz do wypełnienia <span style="color:#f85149;">*</span></label>
+                    <select @bind="_newFormId" class="ev-select" style="border-color:@(_newFormId==0?"rgba(248,81,73,0.4)":"rgba(240,246,252,0.12)");">
+                        <option value="0">— wybierz formularz —</option>
+                        @foreach (var f in _formDefs)
+                        {
+                            <option value="@f.Id">@f.Title</option>
+                        }
+                    </select>
+                    @if (_newFormId == 0)
+                    {
+                        <div style="font-size:10px;color:#f85149;margin-top:4px;">Formularz jest wymagany</div>
+                    }
+                </div>
+            </div>
+
+            <div>
+                <label class="ev-label">Przypisz pracowników</label>
+                <div style="max-height:180px;overflow-y:auto;border:1px solid rgba(240,246,252,0.1);border-radius:7px;padding:8px;">
+                    @foreach (var u in _allUsers)
+                    {
+                        var uid = u.Id;
+                        <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .12s;" @onmouseover="@(e => {})"
+                               onmouseenter="this.style.background='rgba(240,246,252,0.04)'" onmouseleave="this.style.background='transparent'">
+                            <input type="checkbox"
+                                   checked="@_newAssigned.Contains(uid)"
+                                   @onchange="@(e => ToggleAssign(uid, (bool)(e.Value ?? false)))"
+                                   style="width:14px;height:14px;accent-color:#58a6ff;cursor:pointer;flex-shrink:0;" />
+                            <div>
+                                <div style="font-size:13px;color:#e6edf3;">@u.FullName</div>
+                                @if (!string.IsNullOrEmpty(u.Department))
+                                {
+                                    <div style="font-size:10px;color:#484f58;">@u.Department</div>
+                                }
+                            </div>
+                        </label>
+                    }
+                </div>
+                @if (_newAssigned.Count > 0)
+                {
+                    <div style="margin-top:6px;font-size:11px;color:#58a6ff;">Wybrano @_newAssigned.Count pracowników</div>
+                }
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid rgba(240,246,252,0.08);">
+            <button @onclick="CloseModal"
+                    style="padding:9px 18px;border-radius:7px;border:1px solid rgba(240,246,252,0.15);background:transparent;color:#e6edf3;font-size:13px;cursor:pointer;">
+                Anuluj
+            </button>
+            <button @onclick="SaveEvent" disabled="@_saving"
+                    style="padding:9px 22px;border-radius:7px;border:none;background:#58a6ff;color:#0d1117;font-size:13px;font-weight:600;cursor:pointer;opacity:@(_saving?"0.5":"1");">
+                @(_saving ? "Zapisywanie..." : "Dodaj zdarzenie")
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private DateTime _viewDate = new(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+    private DateTime? _selectedDay;
+    private List<CalendarEvent> _events = [];
+    private List<(DateTime Date, bool InMonth)> _calCells = [];
+    private bool _loading = true, _showModal, _saving;
+    private string? _userId;
+    private bool _isManager;
+    private string? _loadError;
+
+    private List<ApplicationUser> _allUsers = [];
+    private List<FormDefinition> _formDefs = [];
+    private HashSet<int> _filledFormIds = [];
+
+    private string _newTitle = "", _newDesc = "", _newColor = "blue";
+    private DateTime _newEventDate = DateTime.UtcNow.Date;
+    private DateTime? _newDueDate;
+    private int _newFormId;
+    private List<string> _newAssigned = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var auth = await AuthState.GetAuthenticationStateAsync();
+            _userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            _isManager = auth.User.IsInRole("Manager") || auth.User.IsInRole("Admin") || auth.User.IsInRole("SuperAdmin");
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _allUsers = await db.Users
+                .Where(u => u.IsActive)
+                .OrderBy(u => u.LastName).ThenBy(u => u.FirstName)
+                .ToListAsync();
+            _formDefs = await db.FormDefinitions.Where(f => f.IsActive).OrderBy(f => f.Title).ToListAsync();
+
+            await LoadEvents();
+            await LoadFilledForms();
+            BuildCalendar();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadEvents()
+    {
+        var monthStart = DateTime.SpecifyKind(_viewDate, DateTimeKind.Utc);
+        var monthEnd   = monthStart.AddMonths(1);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var q = db.CalendarEvents
+            .Include(e => e.RelatedFormDefinition)
+            .Where(e => e.EventDate >= monthStart && e.EventDate < monthEnd);
+
+        if (!_isManager && _userId is not null)
+            q = q.Where(e => e.CreatedByUserId == _userId || e.AssignedUserIds.Contains(_userId));
+
+        _events = await q.OrderBy(e => e.EventDate).ToListAsync();
+    }
+
+    private void BuildCalendar()
+    {
+        _calCells.Clear();
+        var first = _viewDate;
+        var dow = (int)first.DayOfWeek;
+        var startOffset = dow == 0 ? 6 : dow - 1;
+        var start = first.AddDays(-startOffset);
+
+        for (int i = 0; i < 42; i++)
+        {
+            var d = start.AddDays(i);
+            _calCells.Add((d, d.Month == _viewDate.Month));
+        }
+    }
+
+    private async Task LoadFilledForms()
+    {
+        if (_userId is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _filledFormIds = (await db.FormSubmissions
+            .Where(s => s.SubmittedByUserId == _userId)
+            .Select(s => s.FormDefinitionId)
+            .ToListAsync())
+            .ToHashSet();
+    }
+
+    private bool HasFilledForm(CalendarEvent ev)
+        => ev.RelatedFormDefinitionId.HasValue && _filledFormIds.Contains(ev.RelatedFormDefinitionId.Value);
+
+    private List<CalendarEvent> EventsForDay(DateTime day)
+        => _events.Where(e => e.EventDate.Date == day.Date).ToList();
+
+    private void SelectDay(DateTime day) => _selectedDay = _selectedDay == day ? null : day;
+
+    private async Task PrevMonth()
+    {
+        _viewDate = DateTime.SpecifyKind(_viewDate.AddMonths(-1), DateTimeKind.Utc);
+        await LoadEvents();
+        BuildCalendar();
+    }
+
+    private async Task NextMonth()
+    {
+        _viewDate = DateTime.SpecifyKind(_viewDate.AddMonths(1), DateTimeKind.Utc);
+        await LoadEvents();
+        BuildCalendar();
+    }
+
+    private void OpenAddDialog()
+    {
+        ResetForm();
+        _newEventDate = DateTime.UtcNow.Date;
+        _showModal = true;
+    }
+
+    private void OpenAddDialogForDay()
+    {
+        ResetForm();
+        _newEventDate = _selectedDay?.Date ?? DateTime.UtcNow.Date;
+        _showModal = true;
+    }
+
+    private void CloseModal() => _showModal = false;
+
+    private void ResetForm()
+    {
+        _newTitle = ""; _newDesc = ""; _newColor = "blue";
+        _newEventDate = DateTime.Today; _newDueDate = null;
+        _newFormId = 0; _newAssigned = [];
+    }
+
+    private void ToggleAssign(string uid, bool add)
+    {
+        if (add) _newAssigned.Add(uid);
+        else _newAssigned.Remove(uid);
+    }
+
+    private async Task SaveEvent()
+    {
+        if (string.IsNullOrWhiteSpace(_newTitle))
+        {
+            Snackbar.Add("Tytuł jest wymagany", Severity.Warning);
+            return;
+        }
+        if (_newFormId == 0)
+        {
+            Snackbar.Add("Wybierz formularz do wypełnienia", Severity.Warning);
+            return;
+        }
+        if (_userId is null) return;
+
+        _saving = true;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.CalendarEvents.Add(new CalendarEvent
+        {
+            Title                  = _newTitle.Trim(),
+            Description            = string.IsNullOrWhiteSpace(_newDesc) ? null : _newDesc.Trim(),
+            EventDate              = DateTime.SpecifyKind(_newEventDate, DateTimeKind.Utc),
+            DueDate                = _newDueDate.HasValue ? DateTime.SpecifyKind(_newDueDate.Value, DateTimeKind.Utc) : null,
+            EventColor             = _newColor,
+            CreatedByUserId        = _userId,
+            AssignedUserIds        = [.. _newAssigned],
+            RelatedFormDefinitionId = _newFormId > 0 ? _newFormId : null,
+            CreatedAt              = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        Snackbar.Add("Zdarzenie dodane", Severity.Success);
+        _showModal = false;
+        _saving = false;
+
+        await LoadEvents();
+        await LoadFilledForms();
+        StateHasChanged();
+    }
+
+    private async Task ToggleComplete(CalendarEvent ev)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var e = await db.CalendarEvents.FindAsync(ev.Id);
+        if (e is null) return;
+        e.IsCompleted = !e.IsCompleted;
+        await db.SaveChangesAsync();
+        ev.IsCompleted = e.IsCompleted;
+        StateHasChanged();
+    }
+
+    private async Task DeleteEvent(CalendarEvent ev)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var e = await db.CalendarEvents.FindAsync(ev.Id);
+        if (e is not null) db.CalendarEvents.Remove(e);
+        await db.SaveChangesAsync();
+        _events.Remove(ev);
+        StateHasChanged();
+    }
+
+    private static string GetColorLabel(string c) => c switch
+    {
+        "green"  => "ok",
+        "red"    => "pilne",
+        "orange" => "uwaga",
+        _        => "info"
+    };
+}
