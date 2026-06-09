@@ -136,6 +136,79 @@ public static class DbSeeder
             await EnsureMaintenancePlanAsync(db, existingSuperAdmin.Id);
         }
 
+        await EnsureFormAsync(db, "RSW-001", "Rejestr sprawdzania wagi", "Sprawdzania wagi dokonujemy raz dziennie przed rozpoczeciem pracy.", "Produkcja",
+        [
+            Section("header", "Dane wpisu", 10),
+            Field("rok", "Rok", FieldType.Number, 20, true, "Np. 2025", "employee"),
+            Field("miesiac", "Miesiac", FieldType.Select, 30, true, "Wybierz miesiac", "employee",
+            [
+                "Styczen","Luty","Marzec","Kwiecien","Maj","Czerwiec",
+                "Lipiec","Sierpien","Wrzesien","Pazdziernik","Listopad","Grudzien"
+            ]),
+            Field("dzien", "Dzien miesiaca", FieldType.Number, 40, true, "1-31", "employee"),
+            Section("pomiar_section", "Pomiar", 50),
+            Field("pomiar_kg", "Pomiar [kg]", FieldType.Number, 60, true, "Wynik pomiaru w kilogramach", "employee"),
+            Field("odchylenie_kg", "Odchylenie [kg]", FieldType.Number, 70, true, "Odchylenie od wartosci wzorcowej", "employee"),
+            Field("wykonal", "Wykonal", FieldType.Text, 80, true, "Imie i nazwisko osoby wykonujacej pomiar", "employee"),
+            Field("sprawdzanie_odwaznikiem", "Sprawdzanie odwaznikiem", FieldType.Text, 90, false, "Numer lub opis odwaznika uzytego do sprawdzenia", "employee"),
+        ]);
+
+        await EnsureFormAsync(db, "BSD-001", "Badanie skutecznosci dzialania detektora", "Testery: Z - zgodny, NZ - niezgodny", "Produkcja",
+        [
+            Section("header", "Dane badania", 10),
+            Field("lp", "L/P", FieldType.Number, 20, true, "Numer kolejny wpisu", "employee"),
+            Field("data", "Data", FieldType.Date, 30, true, "Data badania", "employee"),
+            Field("godzina", "Godzina", FieldType.Text, 40, true, "Godzina badania, np. 06:00", "employee"),
+            Section("testery_section", "Testery", 50),
+            Field("fe_3mm", "Fe 3,0 [mm]", FieldType.Radio, 60, true, "Wynik testu zelaza", "employee", ["Z - zgodny", "NZ - niezgodny"]),
+            Field("nofe_4mm", "NoFe 4,0 [mm]", FieldType.Radio, 70, true, "Wynik testu metali niezelaznych", "employee", ["Z - zgodny", "NZ - niezgodny"]),
+            Field("ss_45mm", "SS 4,5 [mm]", FieldType.Radio, 80, true, "Wynik testu stali nierdzewnej", "employee", ["Z - zgodny", "NZ - niezgodny"]),
+            Field("uwagi", "Uwagi", FieldType.TextArea, 90, false, "Dodatkowe uwagi do badania", "employee"),
+            Field("podpis_sprawdzajacego", "Podpis osoby sprawdzajacej detektor", FieldType.Text, 100, true, "Imie i nazwisko osoby", "employee"),
+        ]);
+
+        await EnsureFormAsync(db, "MTW-001", "Monitorowanie temperatury i wilgotnosci - Magazyn Opakowan NR 5", "Pomiary wykonywane regularnie w magazynie opakowan.", "Magazyn",
+        [
+            Section("header", "Dane pomiaru", 10),
+            Field("data", "Data", FieldType.Date, 20, true, "Data pomiaru", "employee"),
+            Field("godzina", "Godzina", FieldType.Text, 30, true, "Godzina pomiaru, np. 07:00", "employee"),
+            Field("nr_termohigrometru", "NR termohigrometru wzorcowego", FieldType.Text, 40, true, "Numer urzadzenia pomiarowego", "employee"),
+            Section("magazyn_section", "Magazyn Parter", 50),
+            Field("temp_1", "Temperatura pomiar 1 [°C] (norma >12°C)", FieldType.Number, 60, true, "Pierwszy odczyt temperatury", "employee"),
+            Field("temp_2", "Temperatura pomiar 2 [°C] (norma >12°C)", FieldType.Number, 70, true, "Drugi odczyt temperatury", "employee"),
+            Field("wilg_1", "Wilgotnosc pomiar 1 [%] (norma <70%)", FieldType.Number, 80, true, "Pierwszy odczyt wilgotnosci", "employee"),
+            Field("wilg_2", "Wilgotnosc pomiar 2 [%] (norma <70%)", FieldType.Number, 90, true, "Drugi odczyt wilgotnosci", "employee"),
+            Field("podpis", "Podpis sprawdzajacego", FieldType.Text, 100, true, "Imie i nazwisko", "employee"),
+        ]);
+
+        await EnsureFormAsync(db, "MTW-002", "Monitorowanie temperatury i wilgotnosci - Magazyn Wyrobu Gotowego", "Pomiary w 4 strefach: Parter NR-2, Parter NR-3, Pietro NR-1, Pietro NR-4.", "Magazyn",
+        [
+            Section("header", "Dane pomiaru", 10),
+            Field("data", "Data", FieldType.Date, 20, true, "Data pomiaru", "employee"),
+            Field("godzina", "Godzina", FieldType.Text, 30, true, "Godzina pomiaru, np. 07:00", "employee"),
+            Section("parter2_section", "Magazyn Parter - Termohigrometr NR-2 (norma: Temp <25°C, Wilg <85%)", 40),
+            Field("parter2_temp_1", "Temperatura pomiar 1 [°C]", FieldType.Number, 50, true, "Pierwszy odczyt NR-2", "employee"),
+            Field("parter2_temp_2", "Temperatura pomiar 2 [°C]", FieldType.Number, 60, true, "Drugi odczyt NR-2", "employee"),
+            Field("parter2_wilg_1", "Wilgotnosc pomiar 1 [%]", FieldType.Number, 70, true, "Pierwszy odczyt wilgotnosci NR-2", "employee"),
+            Field("parter2_wilg_2", "Wilgotnosc pomiar 2 [%]", FieldType.Number, 80, true, "Drugi odczyt wilgotnosci NR-2", "employee"),
+            Section("parter3_section", "Magazyn Parter - Termohigrometr NR-3 (norma: Temp <25°C, Wilg <85%)", 90),
+            Field("parter3_temp_1", "Temperatura pomiar 1 [°C]", FieldType.Number, 100, true, "Pierwszy odczyt NR-3", "employee"),
+            Field("parter3_temp_2", "Temperatura pomiar 2 [°C]", FieldType.Number, 110, true, "Drugi odczyt NR-3", "employee"),
+            Field("parter3_wilg_1", "Wilgotnosc pomiar 1 [%]", FieldType.Number, 120, true, "Pierwszy odczyt wilgotnosci NR-3", "employee"),
+            Field("parter3_wilg_2", "Wilgotnosc pomiar 2 [%]", FieldType.Number, 130, true, "Drugi odczyt wilgotnosci NR-3", "employee"),
+            Section("pietro1_section", "Magazyn Pietro - Termohigrometr NR-1 (norma: Temp <25°C, Wilg <85%)", 140),
+            Field("pietro1_temp_1", "Temperatura pomiar 1 [°C]", FieldType.Number, 150, true, "Pierwszy odczyt NR-1", "employee"),
+            Field("pietro1_temp_2", "Temperatura pomiar 2 [°C]", FieldType.Number, 160, true, "Drugi odczyt NR-1", "employee"),
+            Field("pietro1_wilg_1", "Wilgotnosc pomiar 1 [%]", FieldType.Number, 170, true, "Pierwszy odczyt wilgotnosci NR-1", "employee"),
+            Field("pietro1_wilg_2", "Wilgotnosc pomiar 2 [%]", FieldType.Number, 180, true, "Drugi odczyt wilgotnosci NR-1", "employee"),
+            Section("pietro4_section", "Magazyn Pietro - Termohigrometr NR-4 (norma: Temp <25°C, Wilg <85%)", 190),
+            Field("pietro4_temp_1", "Temperatura pomiar 1 [°C]", FieldType.Number, 200, true, "Pierwszy odczyt NR-4", "employee"),
+            Field("pietro4_temp_2", "Temperatura pomiar 2 [°C]", FieldType.Number, 210, true, "Drugi odczyt NR-4", "employee"),
+            Field("pietro4_wilg_1", "Wilgotnosc pomiar 1 [%]", FieldType.Number, 220, true, "Pierwszy odczyt wilgotnosci NR-4", "employee"),
+            Field("pietro4_wilg_2", "Wilgotnosc pomiar 2 [%]", FieldType.Number, 230, true, "Drugi odczyt wilgotnosci NR-4", "employee"),
+            Field("podpis", "Podpis sprawdzajacego", FieldType.Text, 240, true, "Imie i nazwisko", "employee"),
+        ]);
+
         await db.SaveChangesAsync();
     }
 
