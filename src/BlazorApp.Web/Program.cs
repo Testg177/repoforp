@@ -208,7 +208,9 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseSerilogRequestLogging();
-app.UseHttpsRedirection();
+// Na Railway HTTPS jest terminowane na proxy — pomijamy redirect
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PGHOST")))
+    app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
