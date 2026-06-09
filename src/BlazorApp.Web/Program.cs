@@ -11,6 +11,7 @@ using BlazorApp.Web.Areas.Identity;
 using BlazorApp.Web.Hubs;
 using BlazorApp.Web.Services;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
@@ -136,7 +137,7 @@ builder.Services.AddQuartz(q =>
             postgres.TablePrefix = "qrtz_";
         });
         store.UseClustering();
-        store.UseSystemTextJsonSerializer();
+        store.UseNewtonsoftJsonSerializer();
     });
 
     var deadlineJobKey = new JobKey(nameof(DeadlineReminderJob));
