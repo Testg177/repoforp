@@ -19,8 +19,19 @@ using Quartz;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Default connection string is not configured.");
+
+// Railway wstrzykuje PGHOST automatycznie gdy projekt ma serwis Postgres
+var pgHost = Environment.GetEnvironmentVariable("PGHOST");
+var connectionString = !string.IsNullOrEmpty(pgHost)
+    ? $"Host={pgHost};" +
+      $"Port={Environment.GetEnvironmentVariable("PGPORT") ?? "5432"};" +
+      $"Database={Environment.GetEnvironmentVariable("PGDATABASE") ?? "railway"};" +
+      $"Username={Environment.GetEnvironmentVariable("PGUSER") ?? "postgres"};" +
+      $"Password={Environment.GetEnvironmentVariable("PGPASSWORD") ?? ""};" +
+      "SSL Mode=Require;Trust Server Certificate=true;"
+    : builder.Configuration.GetConnectionString("DefaultConnection")
+      ?? throw new InvalidOperationException("Default connection string is not configured.");
+
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 dataSourceBuilder.EnableDynamicJson();
 var dataSource = dataSourceBuilder.Build();
@@ -108,7 +119,7 @@ builder.Services.AddQuartz(q =>
     {
         store.UsePostgres(pg =>
         {
-            pg.ConnectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
+            pg.ConnectionString = connectionString;
             pg.TablePrefix = "qrtz_";
         });
         store.UseNewtonsoftJsonSerializer();
